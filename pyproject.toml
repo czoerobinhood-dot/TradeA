@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "a-share-hot-screener"
+version = "0.1.0"
+description = "A-share hot-stock screener using AkShare and explainable chart-pattern scoring"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "akshare==1.18.96",
+    "numpy>=1.26,<3",
+    "pandas>=2,<4",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+
+[project.scripts]
+a-share-screen = "ashare_screener.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]

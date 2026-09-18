@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest-tmp-pre-publish/
+.cache/
+reports/
+downloads/
+tmp/
+build/
+dist/
+*.egg-info/
+
+# Unrelated local brokerage installer scripts.
+install_huatai_to_d.cmd
+install_huatai_to_d.ps1

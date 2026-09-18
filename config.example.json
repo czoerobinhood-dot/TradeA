@@ -1,0 +1,83 @@
+{
+  "universe_mode": "all",
+  "hot_rank_limit": 80,
+  "concept_limit": 4,
+  "concept_members_limit": 6,
+  "max_candidates": 80,
+  "fund_flow_limit": 60,
+  "report_limit": 30,
+  "history_days": 300,
+  "min_history_rows": 90,
+  "history_workers": 8,
+  "fund_workers": 3,
+  "cache_minutes": 180,
+  "exclude_st": true,
+  "exclude_beijing": false,
+  "universe_prefilter": {
+    "turnover_min": 4.0,
+    "turnover_max": 20.0,
+    "volume_ratio_min": 1.0,
+    "return_5d_max": 20.0,
+    "return_20d_max": 15.0,
+    "return_60d_max": 20.0,
+    "limit_turnover_min": 0.5,
+    "limit_turnover_max": 40.0
+  },
+  "references": [
+    {"code": "600127", "name": "金健米业"},
+    {"code": "600354", "name": "敦煌种业"},
+    {"code": "600722", "name": "金牛化工"},
+    {"code": "002212", "name": "天融信"},
+    {"code": "000017", "name": "深中华A"},
+    {"code": "002181", "name": "粤传媒"},
+    {"code": "300016", "name": "北陆药业"},
+    {"code": "002487", "name": "大金重工"}
+  ],
+  "calibration_stocks": [
+    {"code": "002281", "name": "光迅科技", "role": "target"},
+    {"code": "000592", "name": "平潭发展", "role": "gap"},
+    {"code": "300741", "name": "华宝股份", "role": "target"},
+    {"code": "920895", "name": "花溪科技", "role": "target"},
+    {"code": "688137", "name": "近岸蛋白", "role": "target"},
+    {"code": "920087", "name": "秋乐种业", "role": "target"},
+    {"code": "600354", "name": "敦煌种业", "role": "target"},
+    {"code": "600792", "name": "云煤能源", "role": "target"},
+    {"code": "600630", "name": "龙头股份", "role": "late"}
+  ],
+  "weights": {
+    "hot": 0.10,
+    "theme": 0.05,
+    "technical": 0.35,
+    "similarity": 0.10,
+    "fund": 0.40
+  },
+  "strict_rules": {
+    "drawdown_min": 0.35,
+    "drawdown_max": 0.65,
+    "bottom_volume_ratio_min": 1.10,
+    "bottom_high_volume_days_min": 2,
+    "right_edge_volume_ratio_min": 1.20,
+    "turnover_avg_min": 5.0,
+    "turnover_avg_max": 18.0,
+    "limit_up_min": 2,
+    "limit_down_min": 1,
+    "max_return_5d": 0.25,
+    "max_extension_ma20": 0.15,
+    "max_recovery_from_trough": 0.45,
+    "current_below_decline_peak_min": 0.20,
+    "fund_tightness_ratio_max": 0.80,
+    "fund_absolute_spread_max": 8.0,
+    "fund_cross_min": 1,
+    "fund_cross_max": 12
+  },
+  "gap_rules": {
+    "lookback_days": 25,
+    "minimum_gap_pct": 0.012,
+    "close_fill_tolerance": 0.005,
+    "hold_min_days": 3,
+    "consolidation_close_range_max": 0.18,
+    "post_volume_ratio_min": 1.30,
+    "post_volume_min_days": 3,
+    "post_volume_active_fraction_min": 0.60
+  }
+}
