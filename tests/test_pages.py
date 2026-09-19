@@ -9,6 +9,8 @@ from ashare_screener.pages import (
     READ_ONLY_ACTION,
     READ_ONLY_SUBTITLE,
     READ_ONLY_TITLE,
+    MEMBER_SCRIPT,
+    MEMBER_STYLESHEET,
     export_pages_report,
 )
 
@@ -16,7 +18,8 @@ from ashare_screener.pages import (
 def test_export_pages_report_removes_scan_controls(tmp_path: Path):
     source = tmp_path / "latest.html"
     source.write_text(
-        f"<!doctype html>{LIVE_TITLE}{LIVE_SUBTITLE}{LIVE_ACTION}<p>报告内容</p>",
+        f"<!doctype html><html><head>{LIVE_TITLE}</head><body>"
+        f"{LIVE_SUBTITLE}{LIVE_ACTION}<p>报告内容</p></body></html>",
         encoding="utf-8",
     )
 
@@ -28,7 +31,11 @@ def test_export_pages_report_removes_scan_controls(tmp_path: Path):
     assert READ_ONLY_SUBTITLE in page
     assert READ_ONLY_ACTION in page
     assert LIVE_ACTION not in page
+    assert MEMBER_STYLESHEET in page
+    assert MEMBER_SCRIPT in page
     assert "X-Content-Type-Options: nosniff" in headers
+    assert "/api/*" in headers
+    assert "Cache-Control: no-store" in headers
 
 
 def test_export_pages_report_rejects_unexpected_html(tmp_path: Path):

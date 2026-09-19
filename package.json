@@ -1,0 +1,8 @@
+{
+  "name": "tradea-pages",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:worker": "node --test tests/worker.test.mjs"
+  }
+}

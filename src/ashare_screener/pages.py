@@ -11,6 +11,8 @@ READ_ONLY_SUBTITLE = (
 )
 LIVE_ACTION = '<a class="refresh" href="/?force=1">重新扫描</a>'
 READ_ONLY_ACTION = '<span class="subtle">只读发布</span>'
+MEMBER_STYLESHEET = '<link rel="stylesheet" href="/member.css">'
+MEMBER_SCRIPT = '<script src="/member.js" defer></script>'
 
 PAGES_HEADERS = """/*
   Cache-Control: public, max-age=300
@@ -18,6 +20,11 @@ PAGES_HEADERS = """/*
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: SAMEORIGIN
   Permissions-Policy: camera=(), microphone=(), geolocation=()
+
+/api/*
+  Cache-Control: no-store
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
 """
 
 
@@ -38,6 +45,11 @@ def export_pages_report(
         if page.count(original) != 1:
             raise ValueError(f"报告格式不符合静态发布预期: {original}")
         page = page.replace(original, replacement, 1)
+
+    if page.count("</head>") != 1 or page.count("</body>") != 1:
+        raise ValueError("报告格式不符合成员前端注入预期")
+    page = page.replace("</head>", f"{MEMBER_STYLESHEET}\n</head>", 1)
+    page = page.replace("</body>", f"{MEMBER_SCRIPT}\n</body>", 1)
 
     target_dir.mkdir(parents=True, exist_ok=True)
     index_path = target_dir / "index.html"

@@ -10,6 +10,9 @@ tmp/
 build/
 dist/
 *.egg-info/
+.wrangler/
+wrangler.toml
+.dev.vars
 
 # Unrelated local brokerage installer scripts.
 install_huatai_to_d.cmd
