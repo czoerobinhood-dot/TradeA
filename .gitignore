@@ -14,3 +14,4 @@ dist/
 # Unrelated local brokerage installer scripts.
 install_huatai_to_d.cmd
 install_huatai_to_d.ps1
+configure_huatai_locale.ps1

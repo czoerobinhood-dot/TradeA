@@ -69,6 +69,14 @@ powershell.exe -ExecutionPolicy Bypass -File .\run.ps1
 
 不要在未加访问控制时公开“重新扫描”入口，否则任何访问者都能触发耗时的全市场抓取。详细准备事项见 [Cloudflare 接入说明](docs/CLOUDFLARE.md)。
 
+生成 Pages 只读发布目录：
+
+```powershell
+.\export_pages.cmd
+```
+
+该命令读取 `reports/latest.html`，生成 `site/index.html` 和 `site/_headers`。Cloudflare Pages 使用 `main` 分支、留空构建命令，并将输出目录设为 `site`。静态版本会移除扫描入口，但保留排序、筛选和本地收藏。
+
 ## 单次扫描
 
 不启动网页服务，只运行一次并更新报告：

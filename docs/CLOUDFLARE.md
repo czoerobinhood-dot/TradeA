@@ -11,8 +11,8 @@
 适合公开查看，风险最低。
 
 1. 在可信的 Windows/Linux 主机或 CI 运行扫描。
-2. 将 `reports/latest.html` 复制为静态站点的 `index.html`。
-3. 将静态产物发布到 Cloudflare Pages。
+2. 运行 `export_pages.cmd`，生成只读的 `site/index.html` 和安全响应头。
+3. 在 Cloudflare Pages 连接本仓库的 `main` 分支，构建命令留空，输出目录填写 `site`。
 4. 扫描命令和缓存不对公网开放。
 
 该方案中，访问网页不会触发实时扫描；扫描频率由计划任务或 CI 决定。

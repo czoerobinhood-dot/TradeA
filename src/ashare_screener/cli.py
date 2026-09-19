@@ -6,6 +6,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from ashare_screener.config import ScreenConfig
+from ashare_screener.pages import export_pages_report
 from ashare_screener.pipeline import Screener
 from ashare_screener.provider import AkshareProvider, DataSourceError
 from ashare_screener.report import write_reports
@@ -55,6 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
     web.add_argument("--no-concepts", action="store_true", help="不读取热点概念板块")
     web.add_argument("--no-fund-flow", action="store_true", help="不读取四档资金流")
 
+    pages = subparsers.add_parser(
+        "export-pages", help="将最新 HTML 导出为 Cloudflare Pages 只读站点"
+    )
+    pages.add_argument("--source", default="reports/latest.html", help="源 HTML 报告")
+    pages.add_argument("--output", default="site", help="Pages 输出目录")
+
     validate = subparsers.add_parser("validate", help="只校验配置文件")
     validate.add_argument("--config", default="config.example.json")
     return parser
@@ -69,6 +76,11 @@ def main(argv: list[str] | None = None) -> int:
     _configure_console()
     args = build_parser().parse_args(argv)
     try:
+        if args.command == "export-pages":
+            paths = export_pages_report(args.source, args.output)
+            for label, path in paths.items():
+                print(f"{label}: {path.resolve()}")
+            return 0
         config_path = Path(args.config) if args.config else None
         config = ScreenConfig.from_file(config_path)
         if args.command == "validate":
