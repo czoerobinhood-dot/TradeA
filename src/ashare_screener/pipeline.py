@@ -440,7 +440,7 @@ class Screener:
     def _build_templates(
         self, candidates: list[Candidate]
     ) -> list[ReferenceTemplate]:
-        self.progress("从已确认样本自动提取主升前的价格路径模板")
+        self.progress("从已确认样本自动提取同周期价格路径模板")
         histories = {
             candidate.code: candidate.history
             for candidate in candidates
@@ -479,7 +479,10 @@ class Screener:
             if history is None:
                 continue
             template = extract_reference_template(
-                history, code=item["code"], name=item["name"]
+                history,
+                code=item["code"],
+                name=item["name"],
+                timeframe=str(item.get("timeframe", "daily")),
             )
             if template is None:
                 self.issues.append(
@@ -496,12 +499,18 @@ class Screener:
             if history is None:
                 continue
             template = current_reference_template(
-                history, code=item["code"], name=item["name"]
+                history,
+                code=item["code"],
+                name=item["name"],
+                timeframe=str(item.get("timeframe", "daily")),
             )
             if template is not None:
                 templates.append(template)
         self.source_summary["current_target_templates"] = sum(
             item.kind == "current_target" for item in templates
+        )
+        self.source_summary["weekly_templates"] = sum(
+            item.timeframe == "weekly" for item in templates
         )
         return templates
 
@@ -675,7 +684,11 @@ class Screener:
         similarity = candidate.metrics.get("similarity_score")
         reference = candidate.metrics.get("similar_reference")
         if similarity is not None and reference:
-            candidate.reasons.append(f"日线路径与 {reference} 启动前相似度 {similarity:.1f}")
+            timeframe = candidate.metrics.get("similar_reference_timeframe")
+            timeframe_label = "周线" if timeframe == "weekly" else "日线"
+            candidate.reasons.append(
+                f"{timeframe_label}路径与 {reference} 样本相似度 {similarity:.1f}"
+            )
 
     def _allowed(self, code: str, name: str) -> bool:
         if not is_supported_a_share(code):

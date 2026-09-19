@@ -30,7 +30,7 @@ def _date(value: str) -> date:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="a-share-screen",
-        description="从当前热点股票中筛选与低位启动样本相似的日线形态",
+        description="从A股中筛选与已确认样本相似的同周期价格形态",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

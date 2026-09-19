@@ -26,6 +26,18 @@ DEFAULT_CALIBRATION_STOCKS = [
     {"code": "920087", "name": "秋乐种业", "role": "target"},
     {"code": "600354", "name": "敦煌种业", "role": "target"},
     {"code": "600792", "name": "云煤能源", "role": "target"},
+    {
+        "code": "300300",
+        "name": "海峡创新",
+        "role": "target",
+        "timeframe": "weekly",
+    },
+    {
+        "code": "603396",
+        "name": "金辰股份",
+        "role": "target",
+        "timeframe": "weekly",
+    },
     {"code": "600630", "name": "龙头股份", "role": "late"},
 ]
 
@@ -188,6 +200,11 @@ class ScreenConfig:
             code = str(reference.get("code", ""))
             if len(code) != 6 or not code.isdigit():
                 raise ValueError(f"参考股票代码无效: {code!r}")
+            timeframe = str(reference.get("timeframe", "daily"))
+            if timeframe not in {"daily", "weekly"}:
+                raise ValueError(
+                    f"参考股票 timeframe 必须是 daily 或 weekly: {code}"
+                )
         for item in self.calibration_stocks:
             code = str(item.get("code", ""))
             role = str(item.get("role", ""))
@@ -196,6 +213,11 @@ class ScreenConfig:
             if role not in {"target", "gap", "late"}:
                 raise ValueError(
                     f"校准股票 role 必须是 target、gap 或 late: {code}"
+                )
+            timeframe = str(item.get("timeframe", "daily"))
+            if timeframe not in {"daily", "weekly"}:
+                raise ValueError(
+                    f"校准股票 timeframe 必须是 daily 或 weekly: {code}"
                 )
 
     def to_dict(self) -> dict[str, Any]:

@@ -31,6 +31,7 @@ class ReferenceTemplate:
     forward_return: float
     path: list[float]
     kind: str = "historical_start"
+    timeframe: str = "daily"
 
 
 @dataclass(slots=True)

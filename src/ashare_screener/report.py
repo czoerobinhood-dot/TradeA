@@ -28,6 +28,10 @@ def _stock_links(code: str) -> dict[str, str]:
     }
 
 
+def _timeframe_label(value: object) -> str:
+    return {"daily": "日K", "weekly": "周K"}.get(str(value), "-")
+
+
 def _finite(value: object) -> float | None:
     try:
         numeric = float(value)
@@ -75,6 +79,9 @@ def candidate_record(candidate: Candidate) -> dict[str, Any]:
         "similarity_score": metrics.get("similarity_score"),
         "similar_reference": metrics.get("similar_reference"),
         "similar_reference_date": metrics.get("similar_reference_date"),
+        "similar_reference_timeframe": metrics.get(
+            "similar_reference_timeframe"
+        ),
         "fund_score": metrics.get("fund_score"),
         "fund_super_on_top": metrics.get("fund_super_on_top"),
         "fund_recent_cross": metrics.get("fund_recent_cross"),
@@ -223,8 +230,11 @@ def write_reports(
                 "热点来源": "、".join(record["source_tags"]),
                 "热点概念": "、".join(record["concepts"]),
                 "技术形态分": record["technical_score"],
-                "日线相似度": record["similarity_score"],
+                "同周期形态相似度": record["similarity_score"],
                 "最相似样本": record["similar_reference"],
+                "最相似样本周期": _timeframe_label(
+                    record["similar_reference_timeframe"]
+                ),
                 "资金代理分": record["fund_score"],
                 "严格条件": f"{record['criteria_passed'] or 0}/{record['criteria_total'] or 0}",
                 "高低回撤": record["max_drawdown_250"],
@@ -670,7 +680,7 @@ def render_html(
             f'<span>有效换手 {_fmt(record["turnover_signal"], 1, "%")}</span>'
             f'<span>最新/10日换手 {_fmt(record["turnover"], 1, "%")}/{_fmt(record["turnover_10d_avg"], 1, "%")}</span>'
             f'<span>技术 {_fmt(record["technical_score"], 1)}</span>'
-            f'<span>相似 {_fmt(record["similarity_score"], 1)}</span>'
+            f'<span>相似 {_fmt(record["similarity_score"], 1)}（{_timeframe_label(record["similar_reference_timeframe"])}）</span>'
             f'<span>资金 {_fmt(record["fund_score"], 1)}</span>'
             f'<span>热点来源 {html.escape("、".join(record["source_tags"]) or "未知")}</span>'
             f'<span>实时行情 {html.escape(str(record["quote_source"] or "缺失"))}</span>'
@@ -679,7 +689,7 @@ def render_html(
             f'<span>日线来源 {html.escape(str(record["history_source"] or "未知"))}</span>'
             f'<span>日线数据 {"最近缓存" if record["history_cache_stale"] else "本轮/有效缓存"}</span>'
             f'<span>资金数据 {"最近缓存" if record["fund_cache_stale"] else "本轮/有效缓存" if record["fund_score"] is not None else "缺失"}</span>'
-            f'<span>相似样本 {html.escape(str(record["similar_reference"] or "-"))}</span></div>'
+            f'<span>相似样本 {html.escape(str(record["similar_reference"] or "-"))}（{_timeframe_label(record["similar_reference_timeframe"])}）</span></div>'
             f'<div class="conditions">{condition_items}</div>'
             f'<h4>近 60 日日线</h4>{candlestick_svg(candidate.history)}'
             f'{fund_block}<div class="notes"><div><h4>加分证据</h4><ul>{reason_items}</ul></div>'
@@ -691,7 +701,8 @@ def render_html(
         for issue in outcome.issues
     ) or '<tr><td colspan="3">无</td></tr>'
     template_text = "、".join(
-        f"{item.name}（{item.signal_date}）" for item in outcome.templates
+        f"{item.name}（{item.signal_date}，{_timeframe_label(item.timeframe)}）"
+        for item in outcome.templates
     ) or "未生成"
     generated = outcome.finished_at.strftime("%Y-%m-%d %H:%M:%S")
     decision_counts: dict[str, int] = {}

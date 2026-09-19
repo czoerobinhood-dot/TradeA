@@ -906,6 +906,26 @@ def calculate_fund_metrics(
     }
 
 
+def _reference_close_frame(
+    history: pd.DataFrame, timeframe: str
+) -> pd.DataFrame:
+    frame = history.sort_values("date")[["date", "close"]].copy()
+    frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
+    frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
+    frame = frame.dropna(subset=["date", "close"])
+    if timeframe == "daily":
+        return frame.reset_index(drop=True)
+    if timeframe != "weekly":
+        raise ValueError(f"不支持的形态模板周期: {timeframe}")
+    frame["week"] = frame["date"].dt.to_period("W-FRI")
+    return (
+        frame.groupby("week", sort=True, as_index=False)
+        .agg(date=("date", "last"), close=("close", "last"))
+        [["date", "close"]]
+        .reset_index(drop=True)
+    )
+
+
 def extract_reference_template(
     history: pd.DataFrame,
     *,
@@ -914,8 +934,9 @@ def extract_reference_template(
     window: int = 40,
     forward_days: int = 10,
     search_tail: int = 180,
+    timeframe: str = "daily",
 ) -> ReferenceTemplate | None:
-    frame = history.sort_values("date").reset_index(drop=True)
+    frame = _reference_close_frame(history, timeframe)
     if len(frame) < window + forward_days + 5:
         return None
     close = frame["close"].to_numpy(dtype=float)
@@ -946,6 +967,7 @@ def extract_reference_template(
         signal_date=pd.Timestamp(frame.loc[best_index, "date"]).date().isoformat(),
         forward_return=best_forward_return,
         path=segment.tolist(),
+        timeframe=timeframe,
     )
 
 
@@ -955,8 +977,9 @@ def current_reference_template(
     code: str,
     name: str,
     window: int = 40,
+    timeframe: str = "daily",
 ) -> ReferenceTemplate | None:
-    frame = history.sort_values("date").dropna(subset=["close"])
+    frame = _reference_close_frame(history, timeframe)
     if len(frame) < window:
         return None
     segment = frame["close"].tail(window).to_numpy(dtype=float)
@@ -969,6 +992,7 @@ def current_reference_template(
         forward_return=0.0,
         path=segment.tolist(),
         kind="current_target",
+        timeframe=timeframe,
     )
 
 
@@ -1006,30 +1030,41 @@ def best_shape_similarity(
     window: int = 40,
     exclude_code: str | None = None,
 ) -> dict[str, Any]:
-    if len(history) < window or not templates:
-        return {
-            "similarity_score": None,
-            "similar_reference": None,
-            "similar_reference_code": None,
-            "similar_reference_date": None,
-        }
-    candidate_path = history.sort_values("date")["close"].tail(window).tolist()
+    empty_result = {
+        "similarity_score": None,
+        "similar_reference": None,
+        "similar_reference_code": None,
+        "similar_reference_date": None,
+        "similar_reference_timeframe": None,
+    }
+    if not templates:
+        return empty_result
     eligible = [item for item in templates if item.code != exclude_code]
     if not eligible:
-        return {
-            "similarity_score": None,
-            "similar_reference": None,
-            "similar_reference_code": None,
-            "similar_reference_date": None,
-        }
-    scored = [
-        (path_similarity(candidate_path, template.path), template)
-        for template in eligible
-    ]
+        return empty_result
+    candidate_paths: dict[tuple[str, int], list[float] | None] = {}
+    scored: list[tuple[float, ReferenceTemplate]] = []
+    for template in eligible:
+        template_window = len(template.path) or window
+        key = (template.timeframe, template_window)
+        if key not in candidate_paths:
+            frame = _reference_close_frame(history, template.timeframe)
+            candidate_paths[key] = (
+                frame["close"].tail(template_window).tolist()
+                if len(frame) >= template_window
+                else None
+            )
+        candidate_path = candidate_paths[key]
+        if candidate_path is None or not template.path:
+            continue
+        scored.append((path_similarity(candidate_path, template.path), template))
+    if not scored:
+        return empty_result
     score, template = max(scored, key=lambda item: item[0])
     return {
         "similarity_score": score,
         "similar_reference": template.name,
         "similar_reference_code": template.code,
         "similar_reference_date": template.signal_date,
+        "similar_reference_timeframe": template.timeframe,
     }

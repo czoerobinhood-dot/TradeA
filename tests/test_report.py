@@ -34,6 +34,8 @@ def make_candidate(code: str, name: str, *, limit_up: bool) -> Candidate:
             "final_score": 70.0,
             "technical_score": 75.0,
             "similarity_score": 65.0,
+            "similar_reference": "海峡创新",
+            "similar_reference_timeframe": "weekly",
             "close": 11.0 if limit_up else 10.5,
             "as_of": "2026-09-18",
             "history_as_of": "2026-09-17",
@@ -89,6 +91,8 @@ def test_candidate_record_exposes_current_limit_status():
     assert record["limit_up_today"] is True
     assert record["current_change_pct"] == 10.0
     assert record["current_status_source"] == "实时行情"
+    assert record["similar_reference"] == "海峡创新"
+    assert record["similar_reference_timeframe"] == "weekly"
     assert record["sohu_url"] == "https://q.stock.sohu.com/cn/600001/index.shtml"
     assert record["eastmoney_url"] == "https://quote.eastmoney.com/sh600001.html"
 
@@ -151,6 +155,8 @@ def test_report_has_limit_groups_filters_and_sortable_headers():
     assert 'class="status-stock-link"' in page
     assert 'title="打开搜狐完整行情与K线"' in page
     assert "东财K线/F10" in page
+    assert "相似 65.0（周K）" in page
+    assert "相似样本 海峡创新（周K）" in page
     assert 'data-copy-code="600001"' in page
     assert "navigator.clipboard.writeText(code)" in page
     assert "当前选股数据来自 AkShare" in page

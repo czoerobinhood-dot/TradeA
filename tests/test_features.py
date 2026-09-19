@@ -5,6 +5,7 @@ from ashare_screener.features import (
     best_shape_similarity,
     calculate_fund_metrics,
     calculate_price_metrics,
+    current_reference_template,
     daily_limit_up_price,
     extract_reference_template,
 )
@@ -246,3 +247,26 @@ def test_similarity_excludes_same_stock_template():
     assert template is not None
     result = best_shape_similarity(history, [template], exclude_code="600127")
     assert result["similarity_score"] is None
+
+
+def test_weekly_target_template_compares_weekly_closes():
+    dates = pd.bdate_range("2025-07-01", periods=300)
+    close = np.linspace(18.0, 9.0, len(dates))
+    close[-45:] = np.linspace(7.0, 9.5, 45)
+    history = pd.DataFrame({"date": dates, "close": close})
+
+    template = current_reference_template(
+        history,
+        code="300300",
+        name="海峡创新",
+        timeframe="weekly",
+    )
+
+    assert template is not None
+    assert template.timeframe == "weekly"
+    assert len(template.path) == 40
+    assert template.signal_date == dates[-1].date().isoformat()
+    result = best_shape_similarity(history, [template])
+    assert result["similarity_score"] >= 99
+    assert result["similar_reference"] == "海峡创新"
+    assert result["similar_reference_timeframe"] == "weekly"
