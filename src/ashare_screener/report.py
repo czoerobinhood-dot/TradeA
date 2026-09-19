@@ -15,6 +15,19 @@ from ashare_screener.features import build_fund_proxy
 from ashare_screener.models import Candidate, ScanOutcome
 
 
+def _stock_links(code: str) -> dict[str, str]:
+    if code.startswith("6"):
+        eastmoney = f"https://quote.eastmoney.com/sh{code}.html"
+    elif code.startswith(("4", "8", "9")):
+        eastmoney = f"https://quote.eastmoney.com/bj/{code}.html"
+    else:
+        eastmoney = f"https://quote.eastmoney.com/sz{code}.html"
+    return {
+        "sohu": f"https://q.stock.sohu.com/cn/{code}/index.shtml",
+        "eastmoney": eastmoney,
+    }
+
+
 def _finite(value: object) -> float | None:
     try:
         numeric = float(value)
@@ -44,9 +57,12 @@ def _json_safe(value: Any) -> Any:
 
 def candidate_record(candidate: Candidate) -> dict[str, Any]:
     metrics = candidate.metrics
+    links = _stock_links(candidate.code)
     return {
         "code": candidate.code,
         "name": candidate.name,
+        "sohu_url": links["sohu"],
+        "eastmoney_url": links["eastmoney"],
         "decision": metrics.get("decision"),
         "decision_reason": metrics.get("decision_reason"),
         "final_score": metrics.get("final_score"),
@@ -181,6 +197,8 @@ def write_reports(
                 "排名": rank,
                 "代码": record["code"],
                 "名称": record["name"],
+                "搜狐K线": record["sohu_url"],
+                "东方财富行情": record["eastmoney_url"],
                 "观察结论": record["decision"],
                 "当前状态": "已涨停" if record["limit_up_today"] else "未涨停",
                 "行情日期": record["as_of"],
@@ -509,11 +527,24 @@ def render_html(
             f'data-favorite-name="{html.escape(record["name"], quote=True)}" aria-pressed="false" '
             f'aria-label="收藏 {html.escape(record["name"], quote=True)}" title="收藏">☆</button>'
         )
+        local_detail_link = (
+            f'<a href="#stock-{record["code"]}" title="查看本页K线和筛选明细">本页K线</a>'
+            if record["code"] in detail_codes
+            else ""
+        )
+        action_links = (
+            '<div class="stock-actions">'
+            f'{local_detail_link}'
+            f'<a href="{html.escape(record["sohu_url"], quote=True)}" target="_blank" rel="noopener noreferrer" title="打开搜狐日/周/月K线、盘口和公司资料">搜狐K线</a>'
+            f'<a href="{html.escape(record["eastmoney_url"], quote=True)}" target="_blank" rel="noopener noreferrer" title="打开东方财富K线、资金、F10和公告">东财K线/F10</a>'
+            f'<button type="button" class="copy-code-button" data-copy-code="{record["code"]}" title="复制后在华泰客户端输入代码">复制代码</button>'
+            '</div>'
+        )
         cells = [
             (str(rank), str(rank), "numeric rank-cell"),
             (
                 html.escape(record["name"]),
-                f'<div class="stock-cell">{favorite_button}<div><strong>{html.escape(record["name"])}</strong>'
+                f'<div class="stock-cell">{favorite_button}<div><strong><a class="stock-name-link" href="{html.escape(record["sohu_url"], quote=True)}" target="_blank" rel="noopener noreferrer" title="打开搜狐完整行情与K线">{html.escape(record["name"])}</a></strong>'
                 f'<br><span class="subtle">{record["code"]}</span></div></div>',
                 "",
             ),
@@ -576,6 +607,7 @@ def render_html(
                 "",
             ),
             (_sort_value(record["final_score"]), _fmt(record["final_score"], 1), "numeric"),
+            ("", action_links, "actions-cell"),
         ]
         cell_html = "".join(
             f'<td class="{class_name}" data-sort-value="{html.escape(sort_value, quote=True)}">{display}</td>'
@@ -614,7 +646,7 @@ def render_html(
             f'<section class="candidate" id="stock-{candidate.code}">'
             f'<div class="candidate-head"><div class="candidate-identity">{favorite_button}<div>'
             f'<h3>{rank}. {html.escape(candidate.name)} <span>{candidate.code}</span></h3>'
-            f'<p>{html.escape(str(record["decision_reason"]))}</p></div></div>'
+            f'<p>{html.escape(str(record["decision_reason"]))}</p>{action_links}</div></div>'
             f'<div class="score">{_fmt(record["final_score"], 1)}<small>综合分</small></div></div>'
             f'<div class="metrics"><span>阶段 <b>{html.escape(str(record["stage"]))}</b></span>'
             f'<span>当前状态 <b>{"已涨停" if record["limit_up_today"] else "未涨停"}</b></span>'
@@ -691,12 +723,17 @@ def render_html(
             return f'<p class="subtle">{html.escape(empty_text)}</p>'
         items = []
         for record in records[:12]:
-            identity = (
-                f'<a href="#stock-{record["code"]}"><strong>{html.escape(record["name"])}</strong> '
-                f'<span>{record["code"]}</span></a>'
+            local_link = (
+                f'<a class="status-detail-link" href="#stock-{record["code"]}" title="查看本页K线和筛选明细">本页</a>'
                 if record["code"] in detail_codes
-                else f'<span class="status-stock"><strong>{html.escape(record["name"])}</strong> '
-                f'<span>{record["code"]}</span></span>'
+                else ""
+            )
+            identity = (
+                '<div class="status-identity">'
+                f'<a class="status-stock-link" href="{html.escape(record["sohu_url"], quote=True)}" '
+                f'target="_blank" rel="noopener noreferrer" title="打开搜狐完整行情与K线">'
+                f'<strong>{html.escape(record["name"])}</strong> <span>{record["code"]}</span></a>'
+                f'{local_link}</div>'
             )
             items.append(
                 f'<li>{identity}<span>{_signed_pct(record["current_change_pct"])} · '
@@ -737,7 +774,7 @@ def render_html(
             _sortable_header(15, "红线在上"),
             _sortable_header(16, "总分"),
         ]
-    )
+    ) + '<th>查看</th>'
     table_script = """<script>
 (() => {
   const table = document.getElementById("candidate-table");
@@ -747,6 +784,7 @@ def render_html(
   const sortButtons = Array.from(table.querySelectorAll(".sort-button"));
   const filterButtons = Array.from(document.querySelectorAll("[data-table-filter]"));
   const favoriteButtons = Array.from(document.querySelectorAll("[data-favorite-code]"));
+  const copyCodeButtons = Array.from(document.querySelectorAll("[data-copy-code]"));
   const favoriteFilterButton = document.querySelector('[data-table-filter="favorites"]');
   const visibleCount = document.getElementById("visible-count");
   const emptyState = document.getElementById("table-empty");
@@ -888,6 +926,27 @@ def render_html(
     });
   });
 
+  copyCodeButtons.forEach((button) => {
+    button.addEventListener("click", async () => {
+      const code = button.dataset.copyCode;
+      try {
+        await navigator.clipboard.writeText(code);
+      } catch (error) {
+        const input = document.createElement("textarea");
+        input.value = code;
+        input.style.position = "fixed";
+        input.style.opacity = "0";
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        input.remove();
+      }
+      const original = button.textContent;
+      button.textContent = "已复制";
+      window.setTimeout(() => { button.textContent = original; }, 1200);
+    });
+  });
+
   window.addEventListener("storage", (event) => {
     if (event.key !== favoriteStorageKey) return;
     favorites = loadFavorites();
@@ -922,6 +981,7 @@ main {{ max-width:1220px; margin:0 auto; padding:0 24px 40px; }}
 .summary {{ display:flex; flex-wrap:wrap; gap:18px; margin-top:10px; color:var(--muted); }}
 .summary b {{ color:var(--ink); }}
 .notice {{ padding:10px 12px; border-left:3px solid var(--amber); background:#fff9e8; color:#654a00; }}
+.source-note {{ margin:10px 0; padding:10px 12px; border-left:3px solid var(--blue); background:#f2f6fb; color:#34495e; line-height:1.7; }}
 .strategy-note {{ margin:16px 0; padding:12px 14px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:#f7fafc; line-height:1.7; }}
 .strategy-note strong {{ display:block; margin-bottom:3px; }}
 .status-groups {{ display:grid; grid-template-columns:1fr 1fr; gap:32px; margin:18px 0 4px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }}
@@ -934,6 +994,8 @@ main {{ max-width:1220px; margin:0 auto; padding:0 24px 40px; }}
 .status-list a {{ color:var(--ink); text-decoration:none; }}
 .status-list a:hover {{ color:var(--blue); text-decoration:underline; }}
 .status-list a span,.status-stock span {{ color:var(--muted); font-size:12px; }}
+.status-identity {{ display:flex; align-items:baseline; gap:7px; min-width:0; }}
+.status-detail-link {{ color:var(--blue) !important; font-size:12px; white-space:nowrap; }}
 .status-more {{ justify-content:flex-end !important; color:var(--muted); }}
 .table-toolbar {{ display:flex; justify-content:space-between; align-items:center; gap:16px; margin:0 0 8px; }}
 .segmented {{ display:inline-flex; border:1px solid #bfc7d1; border-radius:4px; overflow:hidden; }}
@@ -942,16 +1004,22 @@ main {{ max-width:1220px; margin:0 auto; padding:0 24px 40px; }}
 .segmented button.active {{ color:#fff; background:#315f98; }}
 .segmented button:focus-visible, .sort-button:focus-visible, .favorite-button:focus-visible {{ outline:2px solid #1b66b1; outline-offset:2px; }}
 .table-wrap {{ overflow-x:auto; border:1px solid var(--line); }}
- table {{ border-collapse:collapse; width:100%; min-width:1460px; }}
+ table {{ border-collapse:collapse; width:100%; min-width:1640px; }}
 th,td {{ padding:9px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }}
 th {{ background:var(--soft); color:#4c5560; font-size:12px; position:sticky; top:0; }}
 .sort-button {{ display:flex; align-items:center; justify-content:space-between; gap:5px; width:100%; min-height:24px; padding:0; border:0; color:inherit; background:transparent; font:inherit; font-weight:600; text-align:inherit; white-space:nowrap; cursor:pointer; }}
 .sort-icon {{ width:12px; color:#66717e; text-align:center; }}
 .stock-cell,.candidate-identity {{ display:flex; align-items:flex-start; gap:7px; min-width:0; }}
 .stock-cell > div,.candidate-identity > div {{ min-width:0; }}
+.stock-name-link {{ color:var(--ink); text-decoration:none; }}
+.stock-name-link:hover {{ color:var(--blue); text-decoration:underline; }}
 .favorite-button {{ display:inline-grid; place-items:center; flex:0 0 28px; width:28px; height:28px; padding:0; border:0; border-radius:3px; color:#7a828c; background:transparent; font:20px/1 Arial,sans-serif; cursor:pointer; }}
 .favorite-button:hover {{ color:#9a6700; background:#fff5cf; }}
 .favorite-button[aria-pressed="true"] {{ color:#b77900; }}
+.stock-actions {{ display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; }}
+.stock-actions a,.copy-code-button {{ display:inline-flex; align-items:center; min-height:27px; padding:3px 7px; border:1px solid #c8ced6; border-radius:3px; color:#315f98; background:#fff; font:12px/1.2 "Microsoft YaHei","PingFang SC",Arial,sans-serif; text-decoration:none; cursor:pointer; white-space:nowrap; }}
+.stock-actions a:hover,.copy-code-button:hover {{ border-color:#315f98; background:#f2f6fb; }}
+.actions-cell {{ min-width:230px; }}
 tbody tr:hover {{ background:#fafbfc; }}
 [hidden] {{ display:none !important; }}
 .numeric {{ text-align:right; font-variant-numeric:tabular-nums; }}
@@ -991,6 +1059,7 @@ footer {{ color:var(--muted); border-top:1px solid var(--line); padding:16px 0; 
 </header>
 <main>
   <p class="notice">这是基于公开行情的研究候选清单，不是收益承诺或买入建议。当前状态优先使用{quote_scope_notice}的价格与涨跌幅，历史形态继续使用前复权日线；“待资金数据”不是完整匹配。</p>
+  <div class="source-note"><strong>行情复核：</strong>点击股票名称打开搜狐日/周/月K线、盘口与公司资料；“东财K线/F10”提供指标K线、资金、公告和F10。当前选股数据来自 AkShare 封装的腾讯与东方财富接口，不是华泰证券数据；也可复制六位代码后在华泰客户端直接输入。</div>
   <div class="strategy-note"><strong>整体筛选提示</strong>第一门槛仍是高位大跌后处于底部；资金侧优先四线靠近、交织不乱且红线上穿。在此前提下，再优选近期向上跳空、收盘不回补、缺口上方横盘、均线转为向上且缺口后持续放量的形态。平潭发展仅作为“缺口平台”样本，不能覆盖第一门槛；光迅科技作为底部结构样本，其新缺口仍需等待横盘确认。</div>
   {status_groups}
   <h2>候选排序</h2>

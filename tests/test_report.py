@@ -89,6 +89,18 @@ def test_candidate_record_exposes_current_limit_status():
     assert record["limit_up_today"] is True
     assert record["current_change_pct"] == 10.0
     assert record["current_status_source"] == "实时行情"
+    assert record["sohu_url"] == "https://q.stock.sohu.com/cn/600001/index.shtml"
+    assert record["eastmoney_url"] == "https://quote.eastmoney.com/sh600001.html"
+
+
+def test_candidate_record_links_cover_shenzhen_and_beijing_markets():
+    shenzhen = candidate_record(make_candidate("002442", "龙星科技", limit_up=False))
+    beijing = candidate_record(make_candidate("920895", "花溪科技", limit_up=False))
+
+    assert shenzhen["sohu_url"] == "https://q.stock.sohu.com/cn/002442/index.shtml"
+    assert shenzhen["eastmoney_url"] == "https://quote.eastmoney.com/sz002442.html"
+    assert beijing["sohu_url"] == "https://q.stock.sohu.com/cn/920895/index.shtml"
+    assert beijing["eastmoney_url"] == "https://quote.eastmoney.com/bj/920895.html"
 
 
 def test_report_has_limit_groups_filters_and_sortable_headers():
@@ -134,6 +146,16 @@ def test_report_has_limit_groups_filters_and_sortable_headers():
     assert 'data-right-volume="true"' in page
     assert 'data-gap-setup="true"' in page
     assert 'data-code="600001"' in page
+    assert 'href="https://q.stock.sohu.com/cn/600001/index.shtml"' in page
+    assert 'href="https://quote.eastmoney.com/sh600001.html"' in page
+    assert 'class="status-stock-link"' in page
+    assert 'title="打开搜狐完整行情与K线"' in page
+    assert "东财K线/F10" in page
+    assert 'data-copy-code="600001"' in page
+    assert "navigator.clipboard.writeText(code)" in page
+    assert "当前选股数据来自 AkShare" in page
+    assert "不是华泰证券数据" in page
+    assert "<th>查看</th>" in page
     assert page.count('class="favorite-button"') == 4
     assert 'ashare-screener:favorites:v1' in page
     assert 'localStorage.setItem(favoriteStorageKey' in page
