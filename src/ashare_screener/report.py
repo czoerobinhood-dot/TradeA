@@ -1122,6 +1122,7 @@ def render_html(
   const favoriteFilterButton = document.querySelector('[data-table-filter="favorites"]');
   const gapReview = document.getElementById("gap-review");
   const gapReviewHint = gapReview?.querySelector(".gap-review-hint");
+  const generalReview = document.getElementById("general-review");
   const visibleCount = document.getElementById("visible-count");
   const emptyState = document.getElementById("table-empty");
   const previousPageButton = document.getElementById("previous-page");
@@ -1134,10 +1135,16 @@ def render_html(
   let sortState = { column: 0, direction: "asc", type: "number" };
   let currentPage = 1;
 
-  const showGapReview = () => {
-    if (!gapReview) return;
-    gapReview.open = true;
-    if (gapReviewHint) gapReviewHint.textContent = "已展开";
+  const syncReviewPanels = () => {
+    const gapActive = activeFilter === "gap-setup";
+    if (gapReview) {
+      gapReview.hidden = !gapActive;
+      if (gapActive) gapReview.open = true;
+    }
+    if (generalReview) generalReview.hidden = gapActive;
+    if (gapReviewHint) {
+      gapReviewHint.textContent = gapReview?.open ? "已展开" : "点击展开";
+    }
   };
 
   gapReview?.addEventListener("toggle", () => {
@@ -1145,34 +1152,6 @@ def render_html(
       gapReviewHint.textContent = gapReview.open ? "已展开" : "点击展开";
     }
   });
-
-  const scrollToStockWithoutHash = (hash, behavior = "smooth") => {
-    if (!/^#(?:gap-)?stock-\\d{6}$/.test(hash || "")) return false;
-    const target = document.getElementById(hash.slice(1));
-    if (!target) return false;
-    const disclosure = target.closest("details");
-    if (disclosure) disclosure.open = true;
-    target.scrollIntoView({ behavior, block: "start" });
-    window.history.replaceState(
-      null,
-      "",
-      `${window.location.pathname}${window.location.search}`,
-    );
-    return true;
-  };
-
-  document.addEventListener("click", (event) => {
-    const link = event.target.closest?.('a[href^="#stock-"],a[href^="#gap-stock-"]');
-    if (!link) return;
-    event.preventDefault();
-    scrollToStockWithoutHash(link.getAttribute("href"));
-  });
-
-  if (/^#(?:gap-)?stock-\\d{6}$/.test(window.location.hash)) {
-    window.requestAnimationFrame(() => {
-      scrollToStockWithoutHash(window.location.hash, "auto");
-    });
-  }
 
   const loadFavorites = () => {
     try {
@@ -1264,6 +1243,47 @@ def render_html(
     emptyState.hidden = filteredRows.length !== 0;
   };
 
+  const activateFilter = (filter) => {
+    activeFilter = filter;
+    filterButtons.forEach((item) => {
+      const selected = item.dataset.tableFilter === activeFilter;
+      item.classList.toggle("active", selected);
+      item.setAttribute("aria-pressed", String(selected));
+    });
+    currentPage = 1;
+    render();
+    syncReviewPanels();
+  };
+
+  const scrollToStockWithoutHash = (hash, behavior = "smooth") => {
+    if (!/^#(?:gap-)?stock-\\d{6}$/.test(hash || "")) return false;
+    activateFilter(hash.startsWith("#gap-stock-") ? "gap-setup" : "all");
+    const target = document.getElementById(hash.slice(1));
+    if (!target) return false;
+    const disclosure = target.closest("details");
+    if (disclosure) disclosure.open = true;
+    target.scrollIntoView({ behavior, block: "start" });
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}`,
+    );
+    return true;
+  };
+
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest?.('a[href^="#stock-"],a[href^="#gap-stock-"]');
+    if (!link) return;
+    event.preventDefault();
+    scrollToStockWithoutHash(link.getAttribute("href"));
+  });
+
+  if (/^#(?:gap-)?stock-\\d{6}$/.test(window.location.hash)) {
+    window.requestAnimationFrame(() => {
+      scrollToStockWithoutHash(window.location.hash, "auto");
+    });
+  }
+
   sortButtons.forEach((button) => {
     button.addEventListener("click", () => {
       const column = Number(button.dataset.column);
@@ -1293,15 +1313,7 @@ def render_html(
 
   filterButtons.forEach((button) => {
     button.addEventListener("click", () => {
-      activeFilter = button.dataset.tableFilter;
-      filterButtons.forEach((item) => {
-        const selected = item === button;
-        item.classList.toggle("active", selected);
-        item.setAttribute("aria-pressed", String(selected));
-      });
-      currentPage = 1;
-      render();
-      if (activeFilter === "gap-setup") showGapReview();
+      activateFilter(button.dataset.tableFilter);
     });
   });
 
@@ -1365,6 +1377,7 @@ def render_html(
 
   syncFavorites();
   render();
+  syncReviewPanels();
 })();
 </script>"""
     return f"""<!doctype html>
@@ -1449,6 +1462,7 @@ tbody tr:hover {{ background:#fafbfc; }}
 .state.danger {{ color:#fff; background:var(--amber); }}
 .state.muted {{ color:#4d5661; background:#e9edf1; }}
 .gap-review {{ margin:24px 0 30px; border:1px solid #c9d8e8; border-radius:6px; background:#f7fafc; scroll-margin-top:16px; }}
+.review-panel[hidden] {{ display:none !important; }}
 .gap-review > summary {{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px; color:var(--ink); cursor:pointer; }}
 .gap-review-title {{ font-size:20px; font-weight:700; }}
 .gap-review-hint {{ color:var(--blue); font-size:13px; white-space:nowrap; }}
@@ -1499,7 +1513,7 @@ footer {{ color:var(--muted); border-top:1px solid var(--line); padding:16px 0; 
   {status_groups}
   <h2>候选排序</h2>
   <div class="table-toolbar"><div class="segmented" role="group" aria-label="候选分组">
-    <button type="button" class="active" data-table-filter="all" aria-pressed="true">全部 {len(candidates)}</button>
+    <button type="button" class="active" data-table-filter="all" aria-controls="candidate-table general-review" aria-pressed="true">全部 {len(candidates)}</button>
     <button type="button" data-table-filter="favorites" aria-pressed="false">收藏 0</button>
     <button type="button" data-table-filter="not-limit" aria-pressed="false">日K低位红量 {len(not_limit_candidates)}</button>
     <button type="button" data-table-filter="right-volume" aria-pressed="false">右侧放量 {len(right_volume_candidates)}</button>
@@ -1515,7 +1529,7 @@ footer {{ color:var(--muted); border-top:1px solid var(--line); padding:16px 0; 
   <template id="candidate-row-template">{''.join(table_rows)}</template>
   <p id="table-empty" class="subtle" hidden>该分组本轮没有候选。</p>
   <p class="subtle">参考模板：{html.escape(template_text)}</p>
-  <details class="gap-review" id="gap-review">
+  <details class="gap-review review-panel" id="gap-review" hidden>
     <summary><span class="gap-review-title">缺口趋势详细复核（{gap_review_count_text}）</span><span class="gap-review-hint">点击展开</span></summary>
     <div class="gap-review-body">
       <p class="subtle">这是独立于通用逐股复核的缺口趋势板块。点击上方“缺口趋势”会自动展开；先从下列股票索引进入专属详解，再核对缺口区间、回补、横盘、趋势、量能、完整日K图和风险。</p>
@@ -1523,9 +1537,11 @@ footer {{ color:var(--muted); border-top:1px solid var(--line); padding:16px 0; 
       {''.join(gap_details) or '<p class="subtle">本轮没有达到缺口趋势复核门槛的候选。</p>'}
     </div>
   </details>
-  <h2>通用逐股复核（前 {detail_count} 只）</h2>
-  <p class="subtle">按综合排序展示通用日K图、板块热度、资金博弈代理、条件证据和风险；该区域与上面的缺口趋势专属复核彼此独立。</p>
-  {''.join(details) or '<p class="subtle">本轮没有可展示的通用逐股复核候选。</p>'}
+  <section class="general-review review-panel" id="general-review" aria-labelledby="general-review-title">
+    <h2 id="general-review-title">通用逐股复核（前 {detail_count} 只）</h2>
+    <p class="subtle">“全部”及普通筛选显示这里的通用日K图、板块热度、资金博弈代理、条件证据和风险；该区域与缺口趋势专属复核彼此独立。</p>
+    {''.join(details) or '<p class="subtle">本轮没有可展示的通用逐股复核候选。</p>'}
+  </section>
   <h2>数据问题</h2>
   <div class="table-wrap"><table class="issues"><thead><tr><th>环节</th><th>代码</th><th>信息</th></tr></thead><tbody>{issue_rows}</tbody></table></div>
   <footer>{html.escape(scope_footer)} 排序只比较进入日线精筛的股票，并会随行情变化。第三方接口字段或访问限制变化时，报告会显示失败项；数据不足的股票不会被静默当作低分股票处理。</footer>

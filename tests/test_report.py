@@ -197,6 +197,10 @@ def test_report_has_limit_groups_filters_and_sortable_headers():
     assert 'data-view-group="not-limit"' in page
     assert 'data-view-group="limit-up"' in page
     assert 'id="candidate-table"' in page
+    assert (
+        'data-table-filter="all" aria-controls="candidate-table general-review" '
+        'aria-pressed="true"'
+    ) in page
     assert 'data-table-filter="not-limit"' in page
     assert 'data-table-filter="right-volume"' in page
     assert 'data-table-filter="gap-setup"' in page
@@ -260,7 +264,13 @@ def test_report_has_limit_groups_filters_and_sortable_headers():
     assert "缺口平台" in page
     assert "缺口后量" in page
     assert "缺口趋势详细复核（2 只）" in page
-    assert '<details class="gap-review" id="gap-review">' in page
+    assert (
+        '<details class="gap-review review-panel" id="gap-review" hidden>' in page
+    )
+    assert (
+        '<section class="general-review review-panel" id="general-review" '
+        'aria-labelledby="general-review-title">' in page
+    )
     assert "点击展开" in page
     assert page.count('class="gap-index-item"') == 2
     assert 'class="gap-index-item" href="#gap-stock-600001"' in page
@@ -269,11 +279,17 @@ def test_report_has_limit_groups_filters_and_sortable_headers():
     assert "缺口趋势专属复核" in page
     assert "缺口价格区间 <b>10.20 - 10.50</b>" in page
     assert "活跃放量占比 <b>75%</b>" in page
-    assert "gapReview.open = true;" in page
+    assert 'const gapActive = activeFilter === "gap-setup";' in page
+    assert "gapReview.hidden = !gapActive;" in page
+    assert "if (gapActive) gapReview.open = true;" in page
+    assert "generalReview.hidden = gapActive;" in page
+    assert '.review-panel[hidden] { display:none !important; }' in page
     filter_handler = page.split("filterButtons.forEach", 1)[1].split(
         "previousPageButton.addEventListener", 1
     )[0]
-    assert 'if (activeFilter === "gap-setup") showGapReview();' in filter_handler
+    assert "activateFilter(button.dataset.tableFilter);" in filter_handler
+    assert 'activateFilter(hash.startsWith("#gap-stock-") ? "gap-setup" : "all");' in page
+    assert "showGapReview" not in page
     assert "grid-template-columns:repeat(2,minmax(0,1fr))" in page
     assert ".segmented button,.segmented button:nth-last-child(-n+2)" in page
     assert 'localeCompare(rightRaw, "zh-CN"' in page
@@ -305,10 +321,13 @@ def test_report_lists_all_rows_but_limits_expensive_details():
     assert 'id="stock-600002"' not in page
     assert "缺口趋势详细复核（1 只）" in page
     assert "通用逐股复核（前 1 只）" in page
-    assert page.index('<details class="gap-review" id="gap-review">') < page.index(
+    assert page.index(
+        '<details class="gap-review review-panel" id="gap-review" hidden>'
+    ) < page.index(
         "通用逐股复核（前 1 只）"
     )
-    assert '<details class="gap-review" id="gap-review" open>' not in page
+    assert '<details class="gap-review review-panel" id="gap-review" open>' not in page
+    assert '<section class="general-review review-panel" id="general-review"' in page
     assert 'target.closest("details")' in page
 
 
