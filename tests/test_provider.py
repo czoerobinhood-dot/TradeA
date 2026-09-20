@@ -36,6 +36,17 @@ class FakeAkshare:
         )
 
 
+def test_history_filters_future_provider_rows_before_taking_window(tmp_path):
+    from datetime import date
+
+    provider = AkshareProvider(cache_dir=tmp_path, as_of=date(2026, 2, 2))
+    provider.ak = FakeAkshare()
+    result = provider.history("600000", history_days=90)
+    assert not result.empty
+    assert result["date"].max() <= pd.Timestamp("2026-02-02")
+    assert result["date"].min() == pd.Timestamp("2026-01-02")
+
+
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [("SZ000001", "000001"), ("SH600000", "600000"), ("920001", "920001")],

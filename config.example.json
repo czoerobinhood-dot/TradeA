@@ -1,4 +1,5 @@
 {
+  "preference_model_path": ".cache/preferences/model.json",
   "universe_mode": "all",
   "hot_rank_limit": 80,
   "concept_limit": 4,

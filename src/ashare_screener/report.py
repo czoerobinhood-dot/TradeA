@@ -70,6 +70,16 @@ def candidate_record(candidate: Candidate) -> dict[str, Any]:
         "decision": metrics.get("decision"),
         "decision_reason": metrics.get("decision_reason"),
         "final_score": metrics.get("final_score"),
+        "base_final_score": metrics.get("base_final_score"),
+        "preference_score": metrics.get("preference_score"),
+        "preference_applied_adjustment": metrics.get("preference_applied_adjustment"),
+        "preference_support": metrics.get("preference_support"),
+        "preference_neighbors": metrics.get("preference_neighbors", []),
+        "preference_status": metrics.get("preference_status"),
+        "preference_model_version": metrics.get("preference_model_version"),
+        "preference_priority_policy": metrics.get("preference_priority_policy"),
+        "preference_priority_enabled": metrics.get("preference_priority_enabled", False),
+        "preference_priority_tier": metrics.get("preference_priority_tier", 0),
         "stage": metrics.get("stage"),
         "hot_rank": candidate.hot_rank,
         "source_tags": candidate.source_tags,
@@ -755,7 +765,9 @@ def render_html(
             ),
             (
                 html.escape(decision),
-                f'<span class="state {decision_class}">{html.escape(decision)}</span>',
+                f'<span class="state {decision_class}">{html.escape(decision)}</span>'
+                + ('<br><span class="state clear preference-priority">形态优先</span>'
+                   if record["preference_priority_tier"] > 0 else ''),
                 "",
             ),
             (
@@ -919,6 +931,17 @@ def render_html(
             f'<p>{html.escape(str(record["decision_reason"]))}</p>{action_links}</div></div>'
             f'<div class="score">{_fmt(record["final_score"], 1)}<small>综合分</small></div></div>'
             '__DETAIL_EXTRA__'
+            + (
+                '<p class="subtle preference-detail">'
+                + ('形态优先 · ' if record["preference_priority_tier"] > 0 else '') +
+                f'日K偏好相似 {_fmt(record["preference_score"], 1)} / 100 · '
+                f'辅助调分 {_fmt(record["preference_applied_adjustment"], 2)} · '
+                '参考：' + html.escape('、'.join(
+                    str(item.get("name", item.get("code", "")))
+                    for item in record["preference_neighbors"]
+                )) + '。仅学习图形偏好，不改变条件判定。</p>'
+                if record["preference_score"] is not None else ''
+            ) +
             f'<div class="metrics"><span>阶段 <b>{html.escape(str(record["stage"]))}</b></span>'
             f'<span>当前状态 <b>{"已涨停" if record["limit_up_today"] else "未涨停"}</b></span>'
             f'<span>当前价/涨幅 {_fmt(record["close"], 2)} / {_signed_pct(record["current_change_pct"])}</span>'
@@ -1512,6 +1535,7 @@ footer {{ color:var(--muted); border-top:1px solid var(--line); padding:16px 0; 
   <div class="strategy-note"><strong>当前筛选重点</strong>全部按日K计算。先确认股价从高位明显回落并仍处于底部，再要求最近20个日K中红色上涨K线的成交量占比至少60%，且至少出现2根红色放量柱，同时排除已经明显上涨的股票。红绿量柱按日K收盘价与开盘价着色，只是买盘偏强代理，不等同于逐笔主动买单。</div>
   {status_groups}
   <h2>候选排序</h2>
+  {('<p class="subtle preference-summary">日K偏好模型：' + str(summary.get('preference_model', {}).get('sample_count', 0)) + ' 只已冻结样本；先看原有筛选条件，在结论、通过条件数与基础综合分相近的候选中，优先展示更接近已确认形态的股票。同股排除、多股共识；辅助调分仍限制在 ±2 分，名次另按形态优先级调整。收益有效性尚未验证。</p>') if summary.get('preference_model') else ''}
   <div class="table-toolbar"><div class="segmented" role="group" aria-label="候选分组">
     <button type="button" class="active" data-table-filter="all" aria-controls="candidate-table general-review" aria-pressed="true">全部 {len(candidates)}</button>
     <button type="button" data-table-filter="favorites" aria-pressed="false">收藏 0</button>

@@ -675,7 +675,10 @@ class AkshareProvider:
             if "__source" in frame and not frame["__source"].dropna().empty
             else "未知缓存源"
         )
-        result = normalize_history(frame).tail(history_days).reset_index(drop=True)
+        normalized = normalize_history(frame)
+        result = normalized.loc[
+            normalized["date"] <= pd.Timestamp(self.as_of)
+        ].tail(history_days).reset_index(drop=True)
         result.attrs["source"] = source
         result.attrs["cache_stale"] = bool(frame.attrs.get("cache_stale", False))
         result.attrs["cache_saved_at"] = frame.attrs.get("cache_saved_at")

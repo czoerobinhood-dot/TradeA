@@ -96,6 +96,7 @@ DEFAULT_GAP_RULES = {
 
 @dataclass(slots=True)
 class ScreenConfig:
+    preference_model_path: str | None = None
     universe_mode: str = "all"
     hot_rank_limit: int = 80
     concept_limit: int = 4
@@ -138,10 +139,16 @@ class ScreenConfig:
             if unknown:
                 raise ValueError(f"配置包含未知字段: {', '.join(unknown)}")
             config = cls(**payload)
+            if config.preference_model_path:
+                model_path = Path(config.preference_model_path)
+                if not model_path.is_absolute():
+                    config.preference_model_path = str((Path(path).resolve().parent / model_path).resolve())
         config.validate()
         return config
 
     def validate(self) -> None:
+        if self.preference_model_path is not None and not isinstance(self.preference_model_path, str):
+            raise ValueError("preference_model_path 必须是文件路径或 null")
         if self.universe_mode not in {"all", "hot"}:
             raise ValueError("universe_mode 必须是 all 或 hot")
         positive_fields = (

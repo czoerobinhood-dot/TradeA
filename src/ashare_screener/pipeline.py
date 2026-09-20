@@ -29,7 +29,8 @@ from ashare_screener.provider import (
     match_sector_name,
     sector_board_candidates,
 )
-from ashare_screener.scoring import classify_candidate, weighted_score
+from ashare_screener.scoring import apply_preference_adjustment, candidate_sort_key, classify_candidate, weighted_score
+from ashare_screener.preferences import score_preference
 
 
 Progress = Callable[[str], None]
@@ -52,6 +53,22 @@ class Screener:
         self.use_fund_flow = use_fund_flow
         self.issues: list[ScanIssue] = []
         self.source_summary: dict[str, object] = {}
+        self.preference_model: dict | None = None
+        if config.preference_model_path:
+            try:
+                from ashare_screener.training import load_preference_model
+
+                self.preference_model = load_preference_model(config.preference_model_path)
+                self.source_summary["preference_model"] = {
+                    "version": self.preference_model.get("model_version"),
+                    "sample_count": len(self.preference_model.get("samples", [])),
+                    "available_from": self.preference_model.get("available_from"),
+                    "model_id": self.preference_model.get("model_id"),
+                    "priority_policy": self.preference_model.get("priority_policy"),
+                    "purpose": "日K形态偏好，收益有效性尚未验证",
+                }
+            except (OSError, ValueError, TypeError) as exc:
+                self.issues.append(ScanIssue("preference_model", f"偏好模型停用: {exc}"))
 
     def run(self) -> ScanOutcome:
         started = datetime.now()
@@ -229,27 +246,22 @@ class Screener:
             decision, decision_reason = classify_candidate(candidate.metrics)
             candidate.metrics["decision"] = decision
             candidate.metrics["decision_reason"] = decision_reason
-        decision_order = {
-            "严格匹配": 0,
-            "接近标准": 1,
-            "待资金数据": 2,
-            "已启动/错过低位": 3,
-            "数据不足": 4,
-            "不符合": 5,
-        }
-        candidates.sort(
-            key=lambda item: (
-                decision_order.get(str(item.metrics.get("decision")), 9),
-                -int(bool(item.metrics.get("early_bottom_match"))),
-                -int(bool(item.metrics.get("bottom_red_volume_confirmed"))),
-                -int(item.metrics.get("criteria_passed", 0)),
-                -float(item.metrics.get("final_score", 0)),
-                float(item.metrics.get("rise_pressure", 99.0)),
-                -int(bool(item.metrics.get("right_edge_volume_expanded"))),
-                -int(bool(item.metrics.get("gap_setup_match"))),
-                -int(item.metrics.get("gap_condition_count", 0)),
-            )
+            if self.preference_model is not None:
+                candidate.metrics.update(score_preference(
+                    candidate.history, self.preference_model,
+                    code=candidate.code, as_of=self.provider.as_of.isoformat(),
+                ))
+                apply_preference_adjustment(candidate.metrics)
+                delta = candidate.metrics.get("preference_applied_adjustment", 0)
+                if delta:
+                    candidate.reasons.append(f"已冻结的日K偏好样本辅助排序 {delta:+.2f} 分（不改变条件判定）")
+        self.source_summary["preference_adjusted_count"] = sum(
+            bool(item.metrics.get("preference_applied_adjustment")) for item in candidates
         )
+        self.source_summary["preference_priority_count"] = sum(
+            int(item.metrics.get("preference_priority_tier", 0)) > 0 for item in candidates
+        )
+        candidates.sort(key=lambda item: candidate_sort_key(item.metrics))
 
         self._load_missing_detail_snapshots(candidates)
         self._enrich_sector_context(candidates)

@@ -81,6 +81,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate = subparsers.add_parser("validate", help="只校验配置文件")
     validate.add_argument("--config", default="config.example.json")
+
+    train = subparsers.add_parser("train-preferences", help="冻结日K偏好样本并验证排序稳定性（不训练收益标签）")
+    train.add_argument("--config", default="config.example.json")
+    train.add_argument("--samples", required=True, help="已确认样本清单 JSON")
+    train.add_argument("--output", default=".cache/preferences/model.json")
+    train.add_argument("--validation", default="reports/preference_validation.json")
+    train.add_argument("--baseline", help="已有 scan_*.json，仅用于异股稳定性对照")
+    train.add_argument("--as-of", type=_date, default=date.today(), help="实际导入日，禁止提前到标签观察日之前")
+    train.add_argument("--cache", default=".cache/akshare")
+    train.add_argument("--offline", action="store_true", help="只读已有日线缓存")
     return parser
 
 
@@ -114,6 +124,20 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         config_path = Path(args.config) if args.config else None
         config = ScreenConfig.from_file(config_path)
+        if args.command == "train-preferences":
+            from ashare_screener.training import train_preferences
+
+            provider = AkshareProvider(cache_dir=args.cache, cache_minutes=config.cache_minutes,
+                                       offline=args.offline, as_of=args.as_of)
+            result = train_preferences(samples_path=args.samples, output_path=args.output,
+                                       validation_path=args.validation, baseline_path=args.baseline,
+                                       provider=provider, config=config, available_from=args.as_of.isoformat())
+            print(f"偏好样本已冻结: {result['sample_count']} 只；异股对照 {result['control_count']} 只")
+            print(f"分类变化 {result['classification_changes']}；最大调分 {result['max_absolute_applied_adjustment']:.2f}")
+            print(f"模型: {Path(args.output).resolve()}")
+            print(f"验证: {Path(args.validation).resolve()}")
+            print("这是形态偏好校准，收益有效性尚未验证。")
+            return 0
         if args.command == "validate":
             print(f"配置有效: {config_path}")
             return 0

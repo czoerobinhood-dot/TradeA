@@ -384,3 +384,25 @@ def test_report_labels_ths_snapshot_as_independent_review_data():
     assert "当日四档资金快照（同花顺）" in page
     assert "该快照只用于当日复核" in page
     assert "不参与历史粘连、交叉或红线位置评分" in page
+
+
+def test_report_distinguishes_learned_preference_from_qualification():
+    candidate = make_candidate("600001", "测试一", limit_up=False)
+    candidate.metrics.update({
+        "preference_score": 81.2, "preference_applied_adjustment": 0.15,
+        "base_final_score": 60.0, "preference_status": "active",
+        "preference_neighbors": [{"code": "002138", "name": "顺络电子"}],
+        "preference_priority_enabled": True, "preference_priority_tier": 1,
+    })
+    now = datetime(2026, 9, 20, 16, 0, 0)
+    outcome = ScanOutcome(status="ok", started_at=now, finished_at=now,
+                          candidates=[candidate], templates=[], issues=[],
+                          source_summary={"preference_model": {"sample_count": 8}})
+    page = render_html(outcome, [candidate], detail_limit=1)
+    assert "日K偏好模型：8 只已冻结样本" in page
+    assert "日K偏好相似 81.2 / 100" in page
+    assert "辅助调分 0.15" in page
+    assert "仅学习图形偏好，不改变条件判定" in page
+    assert "收益有效性尚未验证" in page
+    assert "形态优先 · 日K偏好相似" in page
+    assert "名次另按形态优先级调整" in page
