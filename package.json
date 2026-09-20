@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:worker": "node --test tests/worker.test.mjs"
+    "test:worker": "node --test tests/worker.test.mjs",
+    "pages:deploy": "wrangler pages deploy site --project-name tradea --branch main --no-bundle"
+  },
+  "devDependencies": {
+    "wrangler": "4.135.0"
   }
 }

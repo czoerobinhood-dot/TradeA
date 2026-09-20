@@ -1,46 +1,62 @@
 # Cloudflare 接入说明
 
-## 当前边界
+## 当前生产结构
 
-本项目的扫描过程依赖 Python、Pandas、NumPy 和 AkShare，并需要访问第三方行情接口。Cloudflare Pages 只能托管生成后的静态报告，Cloudflare Workers 也不适合直接运行当前扫描后端。
+本项目的扫描过程依赖 Python、Pandas、NumPy 和 AkShare，并需要访问第三方行情接口。Cloudflare Pages 只托管生成后的静态报告；Pages Worker 只处理成员 API 和静态资源转发，不能运行 Python 扫描后端。
 
-因此，GitHub 仓库可以直接保存和审查源码，但接入 Cloudflare 前需要先选择部署方式。
+当前生产地址为 [https://tradea-3al.pages.dev/](https://tradea-3al.pages.dev/)，Pages 项目名为 `tradea`，采用 Direct Upload。Python 扫描只在可信本地主机运行。
 
-## 方案一：只读报告发布到 Pages
+统一数据流：
 
-适合公开查看，风险最低。
+```text
+本地扫描 -> reports/latest.html -> export_pages.cmd
+         -> site/index.html + site/release.json
+         -> publish_pages.cmd -> Cloudflare Pages + D1 成员协作
+```
 
-1. 在可信的 Windows/Linux 主机或 CI 运行扫描。
-2. 运行 `export_pages.cmd`，生成只读的 `site/index.html` 和安全响应头。
-3. 在 Cloudflare Pages 连接本仓库的 `main` 分支，构建命令留空，输出目录填写 `site`。
-4. 扫描命令和缓存不对公网开放。
+`reports/latest.html` 是唯一报告源。`site/index.html` 是派生产物，不得反向覆盖本地报告。`site/release.json` 记录报告生成时间、源报告 SHA-256 和导出首页 SHA-256，用于避免把旧报告误报为已发布。
 
-该方案中，访问网页不会触发实时扫描；扫描频率由计划任务或 CI 决定。
+## 生产发布
 
-## 方案二：扫描服务接入 Tunnel
+首次安装固定版本的 Wrangler：
 
-适合本人或小范围使用。
+```powershell
+npm install
+```
 
-1. 在一台持续在线的主机运行 `run.cmd` 或等价服务命令。
-2. 安装并登录 `cloudflared`，创建 Tunnel 指向本机服务端口。
-3. 为整个站点启用 Cloudflare Access 身份验证。
-4. 配置速率限制，并限制谁能访问强制扫描入口。
+完成扫描并人工确认 `reports/latest.html` 后执行：
 
-该方案保留浏览器触发扫描能力，但主机必须持续在线。
+```powershell
+.\publish_pages.cmd
+```
 
-## 方案三：Pages + D1 成员协作
+该命令严格按以下顺序执行：
 
-静态扫描报告仍由可信主机生成，成员账号、共享收藏、个人标注和训练反馈使用 Pages
-Worker 与 D1。该方案不会把 Python 扫描器迁入 Worker，也不会允许网页直接修改筛选
-配置。数据库部署、首次管理员初始化和反馈审核步骤见
-[成员收藏与训练反馈](MEMBERS.md)。
+1. 导出并离线校验 `site`。
+2. 运行 Pages/D1 Python 测试与 Worker 测试。
+3. 使用 `wrangler pages deploy` Direct Upload，项目名固定为 `tradea`。
+4. 从生产地址回读 `release.json` 和首页，核对哈希。
+5. 校验 `/api/auth/status`，确认成员服务仍连接。
 
-## 上线前必须确认
+该流程不会触发股票扫描，不会读取或输出 `.dev.vars` 中的初始化口令，也不会修改 D1 数据。
 
-- Cloudflare 域名和账号归属。
-- 页面是公开只读，还是仅本人可访问。
-- 扫描运行位置和时间表。
-- GitHub/Cloudflare 凭据只保存在对应 Secrets 中，绝不提交到仓库。
-- 第三方行情接口在部署环境中的可用性与限频情况。
+## 只读边界
 
-推荐先采用“只读 Pages”，确认报告内容适合公开后，再决定是否开放受保护的扫描服务。
+Cloudflare 页面不会公开本地“重新扫描”入口。访问网页只读取发布时的快照；需要更新行情时，在本地 `8765` 手动扫描、人工确认，再执行发布命令。不要用 Pages、Worker 或公开接口反向触发本地扫描。
+
+未登录时保留浏览器本地收藏。成员登录后，Pages Worker 和 D1 提供共享收藏、个人标注、管理员审核及训练反馈导出；这不会自动修改本地筛选规则。
+
+## 可选 Tunnel 方案
+
+若未来确实需要远程触发扫描，应另行部署常驻主机和 Cloudflare Tunnel，并使用 Cloudflare Access、速率限制和严格身份验证保护整个入口。该方案不属于当前 Pages 生产站点，不能直接复用公开的 `/api` 路径。
+
+## 发布前检查
+
+- Cloudflare 域名、账号和 `tradea` 项目归属正确。
+- 页面公开内容已人工复核，且不包含本地扫描入口。
+- `site/release.json` 与 `reports/latest.html` 一致。
+- GitHub/Cloudflare 凭据只保存在对应 Secret 或本机授权配置中，绝不提交到仓库。
+- D1 绑定名仍为 `DB`，`SETUP_TOKEN` 仍为加密 Secret。
+- 第三方行情接口失败项在报告中被明确标注，没有被解释为低分或收益证据。
+
+当前生产继续使用“只读 Pages + D1 成员协作”。

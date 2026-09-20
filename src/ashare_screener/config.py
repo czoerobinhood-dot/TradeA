@@ -30,13 +30,11 @@ DEFAULT_CALIBRATION_STOCKS = [
         "code": "300300",
         "name": "海峡创新",
         "role": "target",
-        "timeframe": "weekly",
     },
     {
         "code": "603396",
         "name": "金辰股份",
         "role": "target",
-        "timeframe": "weekly",
     },
     {"code": "600630", "name": "龙头股份", "role": "late"},
 ]
@@ -65,14 +63,18 @@ DEFAULT_STRICT_RULES = {
     "drawdown_max": 0.65,
     "bottom_volume_ratio_min": 1.10,
     "bottom_high_volume_days_min": 2,
+    "bottom_red_volume_share_min": 0.60,
+    "bottom_red_high_volume_days_min": 2,
     "right_edge_volume_ratio_min": 1.20,
     "turnover_avg_min": 5.0,
     "turnover_avg_max": 18.0,
     "limit_up_min": 2,
     "limit_down_min": 1,
-    "max_return_5d": 0.25,
-    "max_extension_ma20": 0.15,
-    "max_recovery_from_trough": 0.45,
+    "max_return_1d": 0.08,
+    "max_return_5d": 0.12,
+    "max_return_20d": 0.15,
+    "max_extension_ma20": 0.10,
+    "max_recovery_from_trough": 0.35,
     "current_below_decline_peak_min": 0.20,
     "fund_tightness_ratio_max": 0.80,
     "fund_absolute_spread_max": 8.0,
@@ -190,6 +192,8 @@ class ScreenConfig:
             raise ValueError("drawdown_min 必须小于 drawdown_max")
         if self.strict_rules["turnover_avg_min"] >= self.strict_rules["turnover_avg_max"]:
             raise ValueError("turnover_avg_min 必须小于 turnover_avg_max")
+        if not 0 < self.strict_rules["bottom_red_volume_share_min"] <= 1:
+            raise ValueError("bottom_red_volume_share_min 必须在 0 到 1 之间")
         if set(self.gap_rules) != set(DEFAULT_GAP_RULES):
             raise ValueError("gap_rules 字段必须与示例配置保持一致")
         if any(float(value) < 0 for value in self.gap_rules.values()):
@@ -201,9 +205,9 @@ class ScreenConfig:
             if len(code) != 6 or not code.isdigit():
                 raise ValueError(f"参考股票代码无效: {code!r}")
             timeframe = str(reference.get("timeframe", "daily"))
-            if timeframe not in {"daily", "weekly"}:
+            if timeframe != "daily":
                 raise ValueError(
-                    f"参考股票 timeframe 必须是 daily 或 weekly: {code}"
+                    f"参考股票 timeframe 必须是 daily: {code}"
                 )
         for item in self.calibration_stocks:
             code = str(item.get("code", ""))
@@ -215,9 +219,9 @@ class ScreenConfig:
                     f"校准股票 role 必须是 target、gap 或 late: {code}"
                 )
             timeframe = str(item.get("timeframe", "daily"))
-            if timeframe not in {"daily", "weekly"}:
+            if timeframe != "daily":
                 raise ValueError(
-                    f"校准股票 timeframe 必须是 daily 或 weekly: {code}"
+                    f"校准股票 timeframe 必须是 daily: {code}"
                 )
 
     def to_dict(self) -> dict[str, Any]:

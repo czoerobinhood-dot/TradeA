@@ -274,6 +274,27 @@
   font-size: 12px;
 }
 
+.member-favorite-owner {
+  grid-template-columns: 1fr;
+}
+
+.member-favorite-stock-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 14px;
+  margin-top: 8px;
+}
+
+.member-favorite-stock-link {
+  color: #315f98;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.member-favorite-stock-link:hover {
+  text-decoration: underline;
+}
+
 .member-list-actions {
   display: flex;
   justify-content: flex-end;

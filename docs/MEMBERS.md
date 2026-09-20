@@ -1,16 +1,23 @@
 # 成员收藏与训练反馈
 
+首次管理员创建和 7 只本机收藏迁移请按 [TradeA 成员初始化教程](INITIALIZATION.md) 操作。
+
 ## 架构
 
 - `site/_worker.js`：Cloudflare Pages Worker，提供同源 API 并继续转发静态资源。
 - Cloudflare D1 绑定名：`DB`。
 - `db/migrations/0001_members.sql`：成员、会话、收藏、标注和审核表。
 - `site/member.js`、`site/member.css`：登录、共享收藏、个人标注和管理员审核界面。
+- `site/release.json`：当前线上报告对应的本地报告时间与内容指纹，不包含成员数据或密钥。
 
-密码使用 PBKDF2-SHA256、独立随机盐和 210000 次迭代后保存。登录会话只通过
+密码使用 PBKDF2-SHA256、独立随机盐和 100000 次迭代后保存。管理员密码至少 12 位，普通成员密码至少 4 位。登录会话只通过
 `HttpOnly`、`SameSite=Strict` Cookie 传递，数据库只保存令牌的 SHA-256 摘要。
 
 ## Cloudflare 配置
+
+生产站点为 [https://tradea-3al.pages.dev/](https://tradea-3al.pages.dev/)。D1、`DB` 绑定和 `SETUP_TOKEN` Secret 都属于 Cloudflare 项目配置，不进入 Pages 发布目录。发布新报告必须使用 `publish_pages.cmd`，使成员 Worker、静态报告和版本清单一起验收。
+
+首次配置或重建环境时：
 
 1. 在 Cloudflare 创建名为 `tradea-members` 的 D1 数据库。
 2. 在 D1 控制台执行 `db/migrations/0001_members.sql`。
@@ -22,6 +29,10 @@
 本地 Wrangler 开发可复制 `wrangler.toml.example` 为被 Git 忽略的
 `wrangler.toml`，填入本人的数据库 ID，并在被 Git 忽略的 `.dev.vars` 中填写
 `SETUP_TOKEN=...`。仓库不保存初始化口令、密码、会话、数据库 ID 或 API 密钥。
+
+未登录时，页面继续使用浏览器本地收藏；登录后切换为当前成员的 D1 收藏，并保留本地收藏备份。成员中心可显式导入本机收藏；退出后恢复登录前的本地收藏，避免两套收藏互相覆盖。
+
+每个账号仍独立拥有自己的收藏。管理员登录后可在“成员收藏明细”中按账号查看每位成员收藏了哪些股票；普通成员不会收到完整收藏人清单，共享列表仍保留原有的收藏数量和首次添加者信息。管理员查看明细不会合并、转移或删除成员收藏。
 
 ## 反馈边界
 

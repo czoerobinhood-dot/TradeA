@@ -3,7 +3,8 @@ param(
     [string]$Output = "reports",
     [int]$Top = 30,
     [int]$Port = 8765,
-    [int]$Cooldown = 30
+    [int]$Cooldown = 30,
+    [int]$RefreshInterval = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,7 +19,8 @@ $Arguments = @(
     "--output", (Join-Path $PSScriptRoot $Output),
     "--top", $Top,
     "--port", $Port,
-    "--cooldown", $Cooldown
+    "--cooldown", $Cooldown,
+    "--refresh-interval", $RefreshInterval
 )
 
 & $PythonPath @Arguments

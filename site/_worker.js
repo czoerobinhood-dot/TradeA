@@ -1,5 +1,5 @@
 const SESSION_COOKIE = "tradea_session";
-const PASSWORD_ITERATIONS = 210_000;
+const PASSWORD_ITERATIONS = 100_000;
 const SESSION_DAYS = 7;
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_ATTEMPT_LIMIT = 8;
@@ -86,10 +86,10 @@ export function normalizeUsername(value) {
   return username;
 }
 
-export function validatePassword(value) {
+export function validatePassword(value, minimumLength = 12) {
   const password = String(value || "");
-  if (password.length < 12 || password.length > 128) {
-    throw new HttpError(400, "密码长度必须为12-128位");
+  if (password.length < minimumLength || password.length > 128) {
+    throw new HttpError(400, `密码长度必须为${minimumLength}-128位`);
   }
   return password;
 }
@@ -144,9 +144,10 @@ export async function hashPassword(
   salt = randomBytes(16),
   iterations = PASSWORD_ITERATIONS,
 ) {
+  const normalizedPassword = validatePassword(password, 4);
   const key = await crypto.subtle.importKey(
     "raw",
-    encoder.encode(validatePassword(password)),
+    encoder.encode(normalizedPassword),
     "PBKDF2",
     false,
     ["deriveBits"],
@@ -288,7 +289,7 @@ async function issueSession(request, db, user, status = 200) {
 async function createUser(db, payload, role) {
   const username = normalizeUsername(payload.username);
   const displayName = validateDisplayName(payload.displayName);
-  const password = validatePassword(payload.password);
+  const password = validatePassword(payload.password, role === "admin" ? 12 : 4);
   const passwordData = await hashPassword(password);
   const timestamp = nowIso();
   const user = {
@@ -366,7 +367,7 @@ async function listFavorites(db, user) {
     )
     .bind(user.id)
     .all();
-  return (result.results || []).map((row) => ({
+  const favorites = (result.results || []).map((row) => ({
     code: row.code,
     name: row.name,
     addedBy: row.added_by,
@@ -374,6 +375,35 @@ async function listFavorites(db, user) {
     annotationCount: Number(row.annotation_count || 0),
     mine: Boolean(row.mine),
     updatedAt: row.updated_at,
+  }));
+
+  if (user.role !== "admin") return favorites;
+
+  const collectorResult = await db
+    .prepare(
+      `SELECT f.stock_code AS code,
+              u.id, u.username, u.display_name AS display_name,
+              u.role, u.disabled
+       FROM member_favorites f
+       JOIN users u ON u.id = f.user_id
+       ORDER BY f.stock_code ASC, u.role ASC, u.username ASC`,
+    )
+    .all();
+  const collectorsByCode = new Map();
+  for (const row of collectorResult.results || []) {
+    if (!collectorsByCode.has(row.code)) collectorsByCode.set(row.code, []);
+    collectorsByCode.get(row.code).push({
+      id: row.id,
+      username: row.username,
+      displayName: row.display_name,
+      role: row.role,
+      disabled: Boolean(row.disabled),
+    });
+  }
+
+  return favorites.map((favorite) => ({
+    ...favorite,
+    collectors: collectorsByCode.get(favorite.code) || [],
   }));
 }
 
@@ -464,7 +494,7 @@ async function routeApi(request, env) {
   if (request.method === "POST" && path === "/api/auth/login") {
     const payload = await readJson(request);
     const username = normalizeUsername(payload.username);
-    const password = validatePassword(payload.password);
+    const password = validatePassword(payload.password, 4);
     await checkLoginLimit(db, username);
     const row = await db
       .prepare(

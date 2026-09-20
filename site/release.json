@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "project": "TradeA",
+  "mode": "cloudflare-pages-read-only",
+  "report": {
+    "source_file": "latest.html",
+    "generated_at": "2026-09-20 14:52:04",
+    "sha256": "14a92bedffe59343fc523a5d5817d031e199db13ab6aeb2c9c2fd81cb67db200",
+    "bytes": 2656339
+  },
+  "site": {
+    "index_sha256": "d6677b893cbc72593234f0965d6616148531fd023d28f96ab0b01e6176db8cc3",
+    "index_bytes": 2656428,
+    "scan_trigger": false,
+    "member_collaboration": true
+  }
+}

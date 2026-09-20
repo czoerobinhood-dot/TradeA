@@ -12,6 +12,7 @@ dependencies = [
     "akshare==1.18.96",
     "numpy>=1.26,<3",
     "pandas>=2,<4",
+    "requests>=2.32,<3",
 ]
 
 [project.optional-dependencies]

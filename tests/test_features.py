@@ -47,7 +47,7 @@ def test_price_pattern_penalizes_overheated_move():
     metrics = calculate_price_metrics(make_history(overheated=True))
     assert metrics["stage"] == "已启动"
     assert metrics["entry_late"] is True
-    assert any("低位介入窗口" in item for item in metrics["technical_risks"])
+    assert any("股价已经明显上涨" in item for item in metrics["technical_risks"])
 
 
 def test_daily_limit_price_uses_half_up_exchange_rounding():
@@ -89,6 +89,38 @@ def test_near_limit_move_is_not_treated_as_closed_limit_up():
 
     assert metrics["return_1d"] > 0.09
     assert metrics["limit_up_today"] is False
+    assert metrics["entry_late"] is True
+    assert any("单日上涨" in item for item in metrics["entry_late_reasons"])
+
+
+def test_early_bottom_match_requires_confirmed_volume_and_calm_price():
+    history = make_history()
+    history.loc[history.index[-6:], "volume"] = 1_800_000.0
+
+    metrics = calculate_price_metrics(history, code="600000")
+
+    assert metrics["bottom_volume_confirmed"] is True
+    assert metrics["bottom_red_volume_share"] == 1.0
+    assert metrics["bottom_red_high_volume_days"] >= 2
+    assert metrics["bottom_red_volume_confirmed"] is True
+    assert metrics["entry_late"] is False
+    assert metrics["early_bottom_match"] is True
+    assert metrics["rise_pressure"] <= 1.0
+
+
+def test_green_bottom_volume_does_not_confirm_buying_proxy():
+    history = make_history()
+    bottom_indexes = history.index[-6:]
+    history.loc[bottom_indexes, "volume"] = 1_800_000.0
+    history.loc[bottom_indexes, "open"] = history.loc[bottom_indexes, "close"] * 1.02
+    history.loc[bottom_indexes, "high"] = history.loc[bottom_indexes, "open"] * 1.01
+
+    metrics = calculate_price_metrics(history, code="600000")
+
+    assert metrics["bottom_volume_confirmed"] is True
+    assert metrics["bottom_red_volume_share"] < 0.60
+    assert metrics["bottom_red_volume_confirmed"] is False
+    assert metrics["early_bottom_match"] is False
 
 
 def test_right_edge_volume_prefers_latest_or_recent_expansion():

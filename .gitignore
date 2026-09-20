@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .pytest-tmp-pre-publish/
+node_modules/
 .cache/
 reports/
 downloads/
@@ -13,6 +14,7 @@ dist/
 .wrangler/
 wrangler.toml
 .dev.vars
+.owner.vars
 
 # Unrelated local brokerage installer scripts.
 install_huatai_to_d.cmd

@@ -43,13 +43,18 @@ def weighted_score(
 def classify_candidate(metrics: dict[str, Any]) -> tuple[str, str]:
     completeness = float(metrics.get("data_completeness", 0.0))
     price_count = int(metrics.get("price_condition_count", 0))
-    price_total = int(metrics.get("price_condition_total", 6))
     pre_quote_price_count = int(metrics.get("pre_quote_price_condition_count", 0))
 
     if (
         metrics.get("limit_up_today")
-        and metrics.get("pre_quote_primary_structure_match")
         and pre_quote_price_count >= 2
+        and (
+            metrics.get("pre_quote_primary_structure_match")
+            or (
+                metrics.get("price_conditions", {}).get("drawdown_around_half")
+                and metrics.get("bottom_volume_confirmed")
+            )
+        )
     ):
         return (
             "已启动/错过低位",
@@ -64,25 +69,40 @@ def classify_candidate(metrics: dict[str, Any]) -> tuple[str, str]:
     if metrics.get("entry_late") and price_count >= 2:
         return (
             "已启动/错过低位",
-            "第一门槛成立，但当日或近5日已经明显拉升，不列入低位候选",
+            "高位回落结构成立，但股价已经明显上涨，不列入低位放量候选",
+        )
+    if not metrics.get("bottom_volume_confirmed"):
+        return (
+            "不符合",
+            "高位回落结构成立，但底部量能尚未形成持续放量确认",
+        )
+    if not metrics.get("bottom_red_volume_confirmed"):
+        return (
+            "不符合",
+            "底部虽有放量，但日K红量占比或红色放量柱不足，绿量仍偏多",
         )
     if metrics.get("fund_score") is None:
-        if price_count >= max(4, price_total - 2):
+        if metrics.get("early_bottom_match"):
             return (
                 "待资金数据",
-                "价格形态接近标准，但没有四档资金流，不能验证四线粘连和红线上穿",
+                "高位回落、日K底部红量占优且股价尚未大涨；等待四档资金流确认",
             )
-        return "数据不足", "资金数据缺失，价格条件也未达到近似门槛"
+        return "数据不足", "资金数据缺失，价格侧也未达到低位放量门槛"
     if completeness < 0.75:
         return "数据不足", "有效评分数据不足 75%，不形成筛选结论"
     if metrics.get("strict_match"):
         return (
             "严格匹配",
-            "回撤、底部量能、极端博弈、换手和资金四线均通过严格条件",
+            "高位回落、日K底部红量、尚未大涨和资金四线均通过严格条件",
         )
     if metrics.get("near_match"):
         return (
             "接近标准",
-            "大部分价格条件成立，资金四线也接近目标结构，仍缺少一至两项确认",
+            "日K低位红量价格条件成立，资金四线也接近目标结构",
+        )
+    if metrics.get("early_bottom_match"):
+        return (
+            "接近标准",
+            "高位回落、日K底部红量占优且股价尚未大涨；资金四线尚未匹配",
         )
     return "不符合", "未同时满足价格底部结构与资金四线结构"

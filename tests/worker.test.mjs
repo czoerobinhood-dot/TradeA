@@ -97,18 +97,20 @@ test("password hashing uses salt and verifies without storing plaintext", async 
   assert.notEqual(first.hash, second.hash);
   assert.equal(await verifyPassword("long-password-123", first), true);
   assert.equal(await verifyPassword("wrong-password-123", first), false);
-  assert.equal(first.iterations, 210_000);
+  assert.equal(first.iterations, 100_000);
 });
 
 test("member and stock inputs are normalized and bounded", () => {
   assert.equal(normalizeUsername("  Robin.Hood  "), "robin.hood");
   assert.equal(validatePassword("123456789012"), "123456789012");
+  assert.equal(validatePassword("1234", 4), "1234");
   assert.deepEqual(validateStock({ code: "300300", name: "海峡创新" }), {
     code: "300300",
     name: "海峡创新",
   });
   assert.throws(() => normalizeUsername("ab"), HttpError);
   assert.throws(() => validatePassword("short"), HttpError);
+  assert.throws(() => validatePassword("123", 4), HttpError);
   assert.throws(() => validateStock({ code: "30030", name: "测试" }), HttpError);
 });
 
@@ -226,14 +228,14 @@ test("member workflow shares favorites and exports only admin-approved feedback"
     body: {
       username: "member1",
       displayName: "成员一",
-      password: "member-password-123",
+      password: "1234",
     },
   });
   assert.equal(response.status, 201);
 
   response = await apiRequest(env, "/api/auth/login", {
     method: "POST",
-    body: { username: "member1", password: "member-password-123" },
+    body: { username: "member1", password: "1234" },
   });
   assert.equal(response.status, 200);
   const memberCookie = responseCookie(response);
@@ -250,6 +252,28 @@ test("member workflow shares favorites and exports only admin-approved feedback"
   let payload = await response.json();
   assert.equal(payload.favorites[0].code, "300300");
   assert.equal(payload.favorites[0].mine, true);
+  assert.equal(Object.hasOwn(payload.favorites[0], "collectors"), false);
+
+  response = await apiRequest(env, "/api/favorites", { cookie: adminCookie });
+  assert.equal(response.status, 200);
+  payload = await response.json();
+  assert.equal(payload.favorites[0].mine, false);
+  assert.deepEqual(
+    payload.favorites[0].collectors.map((collector) => ({
+      username: collector.username,
+      displayName: collector.displayName,
+      role: collector.role,
+      disabled: collector.disabled,
+    })),
+    [
+      {
+        username: "member1",
+        displayName: "成员一",
+        role: "member",
+        disabled: false,
+      },
+    ],
+  );
 
   response = await apiRequest(env, "/api/annotations/300300", {
     method: "PUT",
@@ -317,4 +341,15 @@ test("cross-site mutation requests are rejected", async () => {
 
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { error: "拒绝跨站写入" });
+});
+
+test("member UI includes admin-only favorite ownership details", () => {
+  const script = readFileSync(new URL("../site/member.js", import.meta.url), "utf8");
+  const styles = readFileSync(new URL("../site/member.css", import.meta.url), "utf8");
+
+  assert.match(script, /id="member-admin-favorites-section"/);
+  assert.match(script, /function renderMemberFavoriteDetails\(\)/);
+  assert.match(script, /favorite\.collectors/);
+  assert.match(script, /收藏人/);
+  assert.match(styles, /\.member-favorite-stock-list/);
 });

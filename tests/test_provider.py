@@ -5,9 +5,14 @@ from ashare_screener.provider import (
     AkshareProvider,
     is_supported_a_share,
     market_prefix,
+    match_sector_name,
     normalize_code,
     normalize_fund_flow,
     normalize_history,
+    normalize_sector_name,
+    parse_eastmoney_fund_snapshot,
+    parse_ths_fund_snapshot,
+    sector_board_candidates,
 )
 
 
@@ -91,6 +96,85 @@ def test_normalize_fund_flow_uses_net_ratio_columns():
     assert result.loc[0, "small_pct"] == pytest.approx(-1.1)
 
 
+def test_parse_eastmoney_fund_snapshot_fields():
+    result = parse_eastmoney_fund_snapshot(
+        {
+            "rc": 0,
+            "data": {
+                "klines": [
+                    "2026-09-18,42519700.0,371639.0,-42891339.0,-1007783.0,43527483.0"
+                ]
+            },
+        }
+    )
+
+    assert result.iloc[0]["main_net_amount"] == pytest.approx(42_519_700)
+    assert result.iloc[0]["super_large_net_amount"] == pytest.approx(43_527_483)
+    assert result.iloc[0]["medium_net_amount"] == pytest.approx(-42_891_339)
+
+
+def test_parse_ths_fund_snapshot_fields():
+    result = parse_ths_fund_snapshot(
+        {
+            "status_code": 0,
+            "data": {
+                "fundsData": {
+                    "largeOrderFlow": {
+                        "big_capital_net_inflow": -8_388_112,
+                        "mass_capital_net_inflow": 29_199_295,
+                        "medium_capital_net_inflow": -8_051_846,
+                        "small_capital_net_inflow": -12_759_337,
+                    }
+                }
+            },
+        },
+        pd.Timestamp("2026-09-18").date(),
+    )
+
+    assert result.iloc[0]["main_net_amount"] == pytest.approx(20_811_183)
+    assert result.iloc[0]["super_large_net_amount"] == pytest.approx(29_199_295)
+    assert result.iloc[0]["large_net_amount"] == pytest.approx(-8_388_112)
+
+
+def test_fund_snapshot_accumulates_unique_trading_days(tmp_path, monkeypatch):
+    import ashare_screener.provider as provider_module
+    from ashare_screener.provider import CsvCache
+
+    payloads = [
+        {"rc": 0, "data": {"klines": ["2026-09-17,1,2,3,4,5"]}},
+        {"rc": 0, "data": {"klines": ["2026-09-18,6,7,8,9,10"]}},
+    ]
+
+    class FakeResponse:
+        url = "https://push2.eastmoney.com/mock"
+
+        @staticmethod
+        def raise_for_status():
+            return None
+
+        def json(self):
+            return payloads.pop(0)
+
+    class FakeSession:
+        trust_env = True
+
+        def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(provider_module.requests, "Session", FakeSession)
+    provider = object.__new__(AkshareProvider)
+    provider.cache = CsvCache(tmp_path, ttl_minutes=30)
+
+    provider.fund_flow_snapshot("600001")
+    result = provider.fund_flow_snapshot("600001")
+
+    assert result["date"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2026-09-17",
+        "2026-09-18",
+    ]
+    assert result.attrs["cache_stale"] is False
+
+
 def test_normalize_all_market_tencent_fields():
     raw = pd.DataFrame(
         {
@@ -127,6 +211,7 @@ def test_history_falls_back_to_tencent(tmp_path, monkeypatch):
 
     provider.cache = CsvCache(tmp_path, ttl_minutes=30)
     provider.refresh = False
+    provider.refresh_realtime = False
     provider.as_of = pd.Timestamp("2026-09-17").date()
     import threading
 
@@ -165,6 +250,7 @@ def test_hot_proxy_is_explicitly_labeled(tmp_path):
     provider.ak = FakeHotAkshare()
     provider.cache = CsvCache(tmp_path, ttl_minutes=30)
     provider.refresh = False
+    provider.refresh_realtime = False
     result = provider.hot_stocks()
     assert result.iloc[0]["source"].startswith("热点代理")
     assert result.iloc[0]["code"] == "600127"
@@ -186,6 +272,7 @@ def test_history_primary_failure_is_circuit_broken(tmp_path):
     provider.ak = FlakyAkshare()
     provider.cache = CsvCache(tmp_path, ttl_minutes=30)
     provider.refresh = False
+    provider.refresh_realtime = False
     provider.as_of = pd.Timestamp("2026-09-17").date()
     import threading
 
@@ -198,6 +285,80 @@ def test_history_primary_failure_is_circuit_broken(tmp_path):
     provider.history("600127", history_days=90)
     provider.history("600354", history_days=90)
     assert provider.ak.primary_calls == 1
+
+
+def test_realtime_refresh_bypasses_only_intraday_cache():
+    class RecordingCache:
+        def __init__(self):
+            self.calls = []
+
+        def get_or_load(
+            self,
+            key,
+            loader,
+            *,
+            refresh=False,
+            allow_stale_on_error=False,
+        ):
+            self.calls.append((key, refresh, allow_stale_on_error))
+            return loader()
+
+    class LiveAkshare:
+        def stock_zh_a_spot_tx(self):
+            return pd.DataFrame(
+                {
+                    "code": ["sh600000"],
+                    "name": ["浦发银行"],
+                    "zxj": [10.5],
+                    "zdf": [1.2],
+                    "hsl": [5.5],
+                    "lb": [1.3],
+                    "zdf_d5": [-1.0],
+                    "zdf_d20": [-5.0],
+                    "zdf_d60": [-10.0],
+                }
+            )
+
+        def stock_zh_a_hist(self, **kwargs):
+            dates = pd.bdate_range("2026-01-02", periods=100)
+            return pd.DataFrame(
+                {
+                    "日期": dates,
+                    "开盘": range(100),
+                    "收盘": range(1, 101),
+                    "最高": range(2, 102),
+                    "最低": range(100),
+                    "成交量": [1000] * 100,
+                    "成交额": [10000] * 100,
+                    "换手率": [2.0] * 100,
+                }
+            )
+
+    import threading
+
+    provider = object.__new__(AkshareProvider)
+    provider.ak = LiveAkshare()
+    provider.cache = RecordingCache()
+    provider.refresh = False
+    provider.refresh_realtime = True
+    provider.as_of = pd.Timestamp("2026-09-17").date()
+    provider._source_lock = threading.Lock()
+    provider._history_primary_available = None
+    provider._history_primary_error = None
+    provider._fund_flow_available = None
+    provider._fund_flow_error = None
+    provider._fund_flow_failures = 0
+
+    provider.all_stocks()
+    provider.history("600000", history_days=90)
+
+    assert provider.cache.calls[0] == (
+        "all-stocks-tencent",
+        True,
+        True,
+    )
+    assert provider.cache.calls[1][0].startswith("history:600000:")
+    assert provider.cache.calls[1][1:] == (False, True)
 
 
 def test_cache_can_fall_back_to_last_success(tmp_path):
@@ -216,3 +377,59 @@ def test_cache_can_fall_back_to_last_success(tmp_path):
     )
     assert fallback["value"].tolist() == [1, 2, 3]
     assert fallback.attrs["cache_stale"] is True
+
+
+def test_sector_name_matching_is_conservative():
+    assert normalize_sector_name("基础化工") == "化工"
+    assert match_sector_name("基础化工", ["化工行业", "煤炭行业"]) == "化工行业"
+    assert match_sector_name("电子", ["电子信息", "电子元器件"]) is None
+    assert match_sector_name("无法匹配", ["化工行业", "煤炭行业"]) is None
+    assert sector_board_candidates(
+        "建筑材料", ["建筑建材", "水泥行业", "玻璃行业", "煤炭行业"]
+    ) == ["建筑建材", "水泥行业", "玻璃行业"]
+
+
+def test_sina_industry_board_and_member_normalization(tmp_path):
+    class SectorAkshare:
+        def stock_sector_spot(self, indicator):
+            assert indicator == "新浪行业"
+            return pd.DataFrame(
+                {
+                    "label": ["new_blhy", "new_hghy"],
+                    "板块": ["玻璃行业", "化工行业"],
+                    "涨跌幅": ["1.20%", "3.50%"],
+                }
+            )
+
+        def stock_sector_detail(self, sector):
+            assert sector == "new_hghy"
+            return pd.DataFrame(
+                {
+                    "code": ["600002", "000001"],
+                    "name": ["测试二", "测试一"],
+                    "changepercent": ["1.50%", "4.20%"],
+                    "turnoverratio": [3.0, 8.0],
+                }
+            )
+
+    provider = object.__new__(AkshareProvider)
+    provider.ak = SectorAkshare()
+    from ashare_screener.provider import CsvCache
+
+    provider.cache = CsvCache(tmp_path, ttl_minutes=30)
+    provider.refresh = False
+    provider.refresh_realtime = False
+
+    boards = provider.industry_sectors()
+    members = provider.industry_members("new_hghy")
+    cached_members = provider.industry_members("new_hghy")
+
+    assert boards[["sector_name", "rank"]].to_dict("records") == [
+        {"sector_name": "化工行业", "rank": 1},
+        {"sector_name": "玻璃行业", "rank": 2},
+    ]
+    assert members[["code", "rank"]].to_dict("records") == [
+        {"code": "000001", "rank": 1},
+        {"code": "600002", "rank": 2},
+    ]
+    assert cached_members["code"].tolist() == ["000001", "600002"]

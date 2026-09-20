@@ -10,4 +10,7 @@ if not exist "%PYTHON%" (
 )
 
 "%PYTHON%" -m ashare_screener export-pages --source "%ROOT%reports\latest.html" --output "%ROOT%site" %*
+if errorlevel 1 exit /b %ERRORLEVEL%
+
+"%PYTHON%" -m ashare_screener verify-pages --source "%ROOT%reports\latest.html" --output "%ROOT%site"
 exit /b %ERRORLEVEL%

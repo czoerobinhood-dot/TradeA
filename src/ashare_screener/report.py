@@ -75,6 +75,24 @@ def candidate_record(candidate: Candidate) -> dict[str, Any]:
         "source_tags": candidate.source_tags,
         "calibration_role": candidate.calibration_role,
         "concepts": candidate.concepts,
+        "sector_name": metrics.get("sector_name"),
+        "sector_source": metrics.get("sector_source"),
+        "sector_source_url": metrics.get("sector_source_url"),
+        "sector_cache_stale": metrics.get("sector_cache_stale"),
+        "sector_cache_saved_at": metrics.get("sector_cache_saved_at"),
+        "sector_board_name": metrics.get("sector_board_name"),
+        "sector_board_source": metrics.get("sector_board_source"),
+        "sector_board_rank": metrics.get("sector_board_rank"),
+        "sector_board_count": metrics.get("sector_board_count"),
+        "sector_board_change_pct": metrics.get("sector_board_change_pct"),
+        "sector_board_hot": metrics.get("sector_board_hot"),
+        "sector_member_rank": metrics.get("sector_member_rank"),
+        "sector_member_count": metrics.get("sector_member_count"),
+        "sector_member_change_pct": metrics.get("sector_member_change_pct"),
+        "sector_hot_stock": metrics.get("sector_hot_stock"),
+        "sector_member_source": metrics.get("sector_member_source"),
+        "sector_enrichment_status": metrics.get("sector_enrichment_status"),
+        "sector_hot_reason": metrics.get("sector_hot_reason"),
         "technical_score": metrics.get("technical_score"),
         "similarity_score": metrics.get("similarity_score"),
         "similar_reference": metrics.get("similar_reference"),
@@ -85,6 +103,12 @@ def candidate_record(candidate: Candidate) -> dict[str, Any]:
         "fund_score": metrics.get("fund_score"),
         "fund_super_on_top": metrics.get("fund_super_on_top"),
         "fund_recent_cross": metrics.get("fund_recent_cross"),
+        "fund_data_status": metrics.get("fund_data_status"),
+        "fund_snapshot_days": metrics.get("fund_snapshot_days"),
+        "fund_snapshot_as_of": metrics.get("fund_snapshot_as_of"),
+        "fund_snapshot_source": metrics.get("fund_snapshot_source"),
+        "fund_snapshot_cache_stale": metrics.get("fund_snapshot_cache_stale"),
+        "fund_snapshot_compatible": metrics.get("fund_snapshot_compatible"),
         "as_of": metrics.get("as_of"),
         "history_as_of": metrics.get("history_as_of"),
         "close": metrics.get("close"),
@@ -119,6 +143,14 @@ def candidate_record(candidate: Candidate) -> dict[str, Any]:
         "extension_ma20": metrics.get("extension_ma20"),
         "bottom_volume_ratio": metrics.get("bottom_volume_ratio"),
         "bottom_high_volume_days": metrics.get("bottom_high_volume_days"),
+        "bottom_volume_confirmed": metrics.get("bottom_volume_confirmed"),
+        "bottom_red_volume_share": metrics.get("bottom_red_volume_share"),
+        "bottom_red_high_volume_days": metrics.get(
+            "bottom_red_high_volume_days"
+        ),
+        "bottom_red_volume_confirmed": metrics.get(
+            "bottom_red_volume_confirmed"
+        ),
         "latest_volume_ratio": metrics.get("latest_volume_ratio"),
         "recent_3d_volume_ratio": metrics.get("recent_3d_volume_ratio"),
         "right_edge_volume_ratio": metrics.get("right_edge_volume_ratio"),
@@ -163,6 +195,9 @@ def candidate_record(candidate: Candidate) -> dict[str, Any]:
         "turnover_5d_avg": metrics.get("turnover_5d_avg"),
         "turnover_signal": metrics.get("turnover_signal"),
         "entry_late": metrics.get("entry_late"),
+        "entry_late_reasons": metrics.get("entry_late_reasons", []),
+        "rise_pressure": metrics.get("rise_pressure"),
+        "early_bottom_match": metrics.get("early_bottom_match"),
         "price_conditions": metrics.get("price_conditions", {}),
         "price_condition_count": metrics.get("price_condition_count"),
         "price_condition_total": metrics.get("price_condition_total"),
@@ -229,6 +264,18 @@ def write_reports(
                 "人气排名": record["hot_rank"],
                 "热点来源": "、".join(record["source_tags"]),
                 "热点概念": "、".join(record["concepts"]),
+                "所属板块": record["sector_name"],
+                "板块分类来源": record["sector_source"],
+                "对应行情板块": record["sector_board_name"],
+                "板块当日涨幅排名": record["sector_board_rank"],
+                "板块总数": record["sector_board_count"],
+                "板块当日涨幅": record["sector_board_change_pct"],
+                "是否热门板块": record["sector_board_hot"],
+                "个股板块内涨幅排名": record["sector_member_rank"],
+                "板块成分股数": record["sector_member_count"],
+                "个股当日涨幅_板块口径": record["sector_member_change_pct"],
+                "是否板块热门股": record["sector_hot_stock"],
+                "板块热度依据": record["sector_hot_reason"],
                 "技术形态分": record["technical_score"],
                 "同周期形态相似度": record["similarity_score"],
                 "最相似样本": record["similar_reference"],
@@ -236,11 +283,26 @@ def write_reports(
                     record["similar_reference_timeframe"]
                 ),
                 "资金代理分": record["fund_score"],
+                "资金数据状态": record["fund_data_status"],
+                "四档快照累计天数": record["fund_snapshot_days"],
+                "四档快照日期": record["fund_snapshot_as_of"],
+                "四档快照来源": record["fund_snapshot_source"],
+                "四档快照可并入历史": record["fund_snapshot_compatible"],
                 "严格条件": f"{record['criteria_passed'] or 0}/{record['criteria_total'] or 0}",
                 "高低回撤": record["max_drawdown_250"],
                 "当前距该轮高点": record["current_drawdown_from_decline_peak"],
                 "低点后反弹": record["recovery_from_trough"],
+                "1日涨幅": record["return_1d"],
+                "5日涨幅": record["return_5d"],
+                "20日涨幅": record["return_20d"],
+                "高于20日线": record["extension_ma20"],
+                "上涨压力": record["rise_pressure"],
                 "底部量能倍数": record["bottom_volume_ratio"],
+                "底部放量确认": record["bottom_volume_confirmed"],
+                "底部红量占比": record["bottom_red_volume_share"],
+                "底部红色放量柱": record["bottom_red_high_volume_days"],
+                "底部红量确认": record["bottom_red_volume_confirmed"],
+                "低位放量未大涨": record["early_bottom_match"],
                 "最新一日量比": record["latest_volume_ratio"],
                 "近3日均量比": record["recent_3d_volume_ratio"],
                 "右侧量比": record["right_edge_volume_ratio"],
@@ -435,6 +497,49 @@ def fund_svg(fund_flow: pd.DataFrame, width: int = 920, height: int = 210) -> st
     return "".join(fragments)
 
 
+def fund_snapshot_svg(
+    fund_snapshot: pd.DataFrame, width: int = 920, height: int = 220
+) -> str:
+    required = ["super_large_pct", "large_pct", "medium_pct", "small_pct"]
+    if fund_snapshot.empty or any(column not in fund_snapshot for column in required):
+        return ""
+    row = fund_snapshot.sort_values("date").iloc[-1]
+    values = [_finite(row[column]) for column in required]
+    if any(value is None for value in values):
+        return ""
+    numeric_values = [float(value) for value in values if value is not None]
+    limit = max(max(abs(value) for value in numeric_values) * 1.18, 1.0)
+    top, bottom = 30, 45
+    plot_height = height - top - bottom
+    y_map = lambda value: top + (limit - value) / (2 * limit) * plot_height
+    zero_y = y_map(0)
+    labels = ["超大单", "大单", "中单", "小单"]
+    centers = [150, 360, 570, 780]
+    bar_width = 88
+    date_text = pd.to_datetime(row["date"]).strftime("%Y-%m-%d")
+    fragments = [
+        f'<svg class="chart" viewBox="0 0 {width} {height}" role="img" aria-label="{date_text} 当日四档资金快照">',
+        '<rect width="100%" height="100%" fill="#ffffff"/>',
+        f'<line x1="52" y1="{zero_y:.1f}" x2="{width-18}" y2="{zero_y:.1f}" stroke="#aeb4bd" stroke-dasharray="4 4"/>',
+        f'<text x="52" y="17" class="legend">{date_text} · 净额占成交额比例</text>',
+    ]
+    for center, label, value in zip(centers, labels, numeric_values, strict=True):
+        value_y = y_map(value)
+        bar_y = min(value_y, zero_y)
+        bar_height = max(abs(value_y - zero_y), 1.5)
+        color = "#c43d4b" if value >= 0 else "#168579"
+        text_y = max(top + 11, value_y - 6) if value >= 0 else min(height - bottom - 4, value_y + 16)
+        fragments.extend(
+            [
+                f'<rect x="{center-bar_width/2:.1f}" y="{bar_y:.1f}" width="{bar_width}" height="{bar_height:.1f}" fill="{color}" opacity="0.82"/>',
+                f'<text x="{center}" y="{text_y:.1f}" text-anchor="middle" fill="{color}" class="legend">{value:+.2f}%</text>',
+                f'<text x="{center}" y="{height-15}" text-anchor="middle" class="legend">{label}</text>',
+            ]
+        )
+    fragments.append("</svg>")
+    return "".join(fragments)
+
+
 def _sort_value(value: object, *, scale: float = 1.0) -> str:
     numeric = _finite(value)
     return "" if numeric is None else f"{numeric * scale:.12g}"
@@ -443,6 +548,11 @@ def _sort_value(value: object, *, scale: float = 1.0) -> str:
 def _signed_pct(value: object) -> str:
     numeric = _finite(value)
     return "-" if numeric is None else f"{numeric:+.2f}%"
+
+
+def _signed_ratio(value: object) -> str:
+    numeric = _finite(value)
+    return "-" if numeric is None else f"{numeric:+.1%}"
 
 
 def _sortable_header(
@@ -471,13 +581,26 @@ def render_html(
 ) -> str:
     summary = outcome.source_summary
     detail_limit = len(candidates) if detail_limit is None else max(0, detail_limit)
-    detail_count = min(len(candidates), detail_limit)
-    detail_codes = {item.code for item in candidates[:detail_count]}
+    general_detail_candidates = candidates[:detail_limit]
+    general_detail_codes = {item.code for item in general_detail_candidates}
+    gap_detail_candidates = [
+        item for item in candidates if bool(item.metrics.get("gap_setup_near"))
+    ][:detail_limit]
+    gap_detail_codes = {item.code for item in gap_detail_candidates}
+    detail_codes = gap_detail_codes | general_detail_codes
+    detail_anchor_by_code = {
+        item.code: f"stock-{item.code}" for item in general_detail_candidates
+    }
+    for item in gap_detail_candidates:
+        detail_anchor_by_code.setdefault(item.code, f"gap-stock-{item.code}")
+    gap_detail_count = len(gap_detail_candidates)
+    detail_count = len(general_detail_candidates)
     status_text = {"ok": "数据完整", "partial": "部分数据缺失", "failed": "扫描失败"}.get(
         outcome.status, outcome.status
     )
     table_rows = []
     details = []
+    gap_details = []
     not_limit_candidates: list[dict[str, Any]] = []
     limit_up_candidates: list[dict[str, Any]] = []
     right_volume_candidates: list[dict[str, Any]] = []
@@ -486,6 +609,8 @@ def render_html(
         "decline_into_current_base": "大跌后仍在底部",
         "drawdown_around_half": "回撤约50%",
         "bottom_volume_expanded": "底部放量",
+        "bottom_volume_confirmed": "底部持续放量",
+        "bottom_red_volume_confirmed": "日K底部红量占优",
         "right_edge_volume_expanded": "右侧放量",
         "recent_gap_up": "近期向上跳空",
         "gap_close_unfilled": "收盘未补缺口",
@@ -495,7 +620,7 @@ def render_html(
         "repeated_limit_activity": "涨跌停反复",
         "turnover_near_target": "换手接近10%",
         "bottom_consolidated": "底部收敛",
-        "entry_not_late": "尚未大涨",
+        "entry_not_late": "股价尚未大涨",
         "four_lines_compact": "四线靠近",
         "crossings_orderly": "交织不乱",
         "red_line_on_top": "红线在上",
@@ -517,7 +642,7 @@ def render_html(
         if view_group == "not-limit" and right_edge_volume_expanded:
             right_volume_candidates.append(record)
         gap_setup_near = bool(record["gap_setup_near"])
-        if view_group == "not-limit" and gap_setup_near:
+        if gap_setup_near:
             gap_setup_candidates.append(record)
         decision_class = {
             "严格匹配": "positive",
@@ -537,9 +662,10 @@ def render_html(
             f'data-favorite-name="{html.escape(record["name"], quote=True)}" aria-pressed="false" '
             f'aria-label="收藏 {html.escape(record["name"], quote=True)}" title="收藏">☆</button>'
         )
+        detail_anchor = detail_anchor_by_code.get(record["code"])
         local_detail_link = (
-            f'<a href="#stock-{record["code"]}" title="查看本页K线和筛选明细">本页K线</a>'
-            if record["code"] in detail_codes
+            f'<a href="#{detail_anchor}" title="查看本页K线和筛选明细">本页K线</a>'
+            if detail_anchor
             else ""
         )
         action_links = (
@@ -550,12 +676,55 @@ def render_html(
             f'<button type="button" class="copy-code-button" data-copy-code="{record["code"]}" title="复制后在华泰客户端输入代码">复制代码</button>'
             '</div>'
         )
+        sector_name = str(record["sector_name"] or "-")
+        sector_board_name = str(record["sector_board_name"] or "")
+        sector_board_rank = record["sector_board_rank"]
+        sector_member_rank = record["sector_member_rank"]
+        if record["sector_board_hot"] is True:
+            board_heat = '<span class="state positive">热门板块</span>'
+        elif record["sector_board_hot"] is False:
+            board_heat = '<span class="state clear">非前10</span>'
+        else:
+            board_heat = '<span class="state muted">热度待定</span>'
+        if record["sector_hot_stock"] is True:
+            stock_heat = '<span class="state positive">板块热门股</span>'
+        elif record["sector_hot_stock"] is False:
+            stock_heat = '<span class="state clear">非板内前5</span>'
+        else:
+            stock_heat = '<span class="state muted">个股排名待定</span>'
+        sector_detail = (
+            (
+                f'新浪 {html.escape(sector_board_name)}<br>'
+                if sector_board_name and sector_board_name != sector_name
+                else ""
+            )
+            + f'板块 {_fmt(record["sector_board_change_pct"], 2, "%")} · '
+            f'{sector_board_rank or "-"}/{record["sector_board_count"] or "-"}<br>'
+            f'个股 {sector_member_rank or "-"}/{record["sector_member_count"] or "-"}'
+        )
+        if sector_name == "-":
+            sector_display = (
+                '<span class="subtle">行业不可用，热度不可判定</span>'
+                if record["sector_enrichment_status"]
+                else '<span class="subtle">未补充（非推荐项）</span>'
+            )
+        else:
+            sector_display = (
+                f'<div class="sector-cell"><strong>{html.escape(sector_name)}</strong>'
+                f'<div class="sector-flags">{board_heat}{stock_heat}</div>'
+                f'<span class="subtle">{sector_detail}</span></div>'
+            )
         cells = [
             (str(rank), str(rank), "numeric rank-cell"),
             (
                 html.escape(record["name"]),
                 f'<div class="stock-cell">{favorite_button}<div><strong><a class="stock-name-link" href="{html.escape(record["sohu_url"], quote=True)}" target="_blank" rel="noopener noreferrer" title="打开搜狐完整行情与K线">{html.escape(record["name"])}</a></strong>'
                 f'<br><span class="subtle">{record["code"]}</span></div></div>',
+                "",
+            ),
+            (
+                "" if sector_name == "-" else html.escape(sector_name),
+                sector_display,
                 "",
             ),
             (
@@ -568,7 +737,13 @@ def render_html(
                 f'<span class="state {status_class}">{limit_status_text}</span><br><span class="subtle">{status_source}</span>',
                 "",
             ),
-            (_sort_value(record["current_change_pct"]), _signed_pct(record["current_change_pct"]), "numeric"),
+            (
+                _sort_value(record["current_change_pct"]),
+                f'{_signed_pct(record["current_change_pct"])}<br><span class="subtle">'
+                f'5日 {_signed_ratio(record["return_5d"])} · '
+                f'20日 {_signed_ratio(record["return_20d"])}</span>',
+                "numeric",
+            ),
             (
                 _sort_value(record["criteria_passed"]),
                 f'{record["criteria_passed"] or 0}/{record["criteria_total"] or 0}',
@@ -579,7 +754,14 @@ def render_html(
                 f'{_fmt(-(_finite(record["max_drawdown_250"]) or 0) * 100, 0, "%")} / {_fmt((_finite(record["current_drawdown_from_decline_peak"]) or 0) * 100, 0, "%")}',
                 "numeric",
             ),
-            (_sort_value(record["bottom_volume_ratio"]), f'{_fmt(record["bottom_volume_ratio"], 2)}x', "numeric"),
+            (
+                _sort_value(record["bottom_volume_ratio"]),
+                f'{_fmt(record["bottom_volume_ratio"], 2)}x<br><span class="subtle">'
+                f'红量 {_fmt((_finite(record["bottom_red_volume_share"]) or 0) * 100, 0, "%")} · '
+                f'{record["bottom_red_high_volume_days"] or 0}柱 · '
+                f'{"已确认" if record["bottom_red_volume_confirmed"] else "未确认"}</span>',
+                "numeric",
+            ),
             (
                 _sort_value(record["right_edge_volume_ratio"]),
                 f'{_fmt(record["right_edge_volume_ratio"], 2)}x',
@@ -629,7 +811,7 @@ def render_html(
             f'data-code="{record["code"]}" data-favorite="false" '
             f'data-original-rank="{rank}">{cell_html}</tr>'
         )
-        if rank > detail_count:
+        if candidate.code not in detail_codes:
             continue
         all_conditions = (
             record["price_conditions"]
@@ -647,13 +829,35 @@ def render_html(
             f"<li>{html.escape(item)}</li>" for item in record["risks"][:12]
         ) or "<li>未识别到规则内的额外风险项</li>"
         fund_chart = fund_svg(candidate.fund_flow) if candidate.fund_flow is not None else ""
-        fund_block = (
-            f'<h4>资金博弈代理</h4>{fund_chart}'
-            if fund_chart
-            else '<p class="notice">该候选没有取得四档历史资金流，最终得分已按可用组件重新加权。</p>'
+        snapshot_chart = (
+            fund_snapshot_svg(candidate.fund_snapshot)
+            if candidate.fund_snapshot is not None
+            else ""
         )
-        details.append(
-            f'<section class="candidate" id="stock-{candidate.code}">'
+        if fund_chart:
+            fund_block = f'<h4>资金博弈代理</h4>{fund_chart}'
+        elif snapshot_chart:
+            if record["fund_snapshot_compatible"] is True:
+                fund_block = (
+                    f'<h4>当日四档资金快照（东方财富）</h4>{snapshot_chart}'
+                    '<p class="notice">当前只有真实当日四档净额快照，'
+                    f'本地已累计 {record["fund_snapshot_days"] or 0}/8 个交易日；'
+                    '满 8 日后才生成历史四线并参与粘连、交叉和红线位置评分。</p>'
+                )
+            else:
+                fund_block = (
+                    f'<h4>当日四档资金快照（同花顺）</h4>{snapshot_chart}'
+                    '<p class="notice">东方财富历史四档数据当前不可用；'
+                    '这里展示同花顺真实当日四档净额。两者订单分档口径不同，'
+                    '该快照只用于当日复核，不参与历史粘连、交叉或红线位置评分。</p>'
+                )
+        else:
+            fund_block = (
+                '<p class="notice">历史资金流和当日四档快照均未取得，'
+                '最终得分已按可用组件重新加权。</p>'
+            )
+        detail_card = (
+            '<section class="candidate" id="__DETAIL_ID__">'
             f'<div class="candidate-head"><div class="candidate-identity">{favorite_button}<div>'
             f'<h3>{rank}. {html.escape(candidate.name)} <span>{candidate.code}</span></h3>'
             f'<p>{html.escape(str(record["decision_reason"]))}</p>{action_links}</div></div>'
@@ -661,6 +865,8 @@ def render_html(
             f'<div class="metrics"><span>阶段 <b>{html.escape(str(record["stage"]))}</b></span>'
             f'<span>当前状态 <b>{"已涨停" if record["limit_up_today"] else "未涨停"}</b></span>'
             f'<span>当前价/涨幅 {_fmt(record["close"], 2)} / {_signed_pct(record["current_change_pct"])}</span>'
+            f'<span>近1/5/20日 {_signed_ratio(record["return_1d"])} / {_signed_ratio(record["return_5d"])} / {_signed_ratio(record["return_20d"])}</span>'
+            f'<span>距20日线 {_signed_ratio(record["extension_ma20"])}</span>'
             f'<span>行情日期 {html.escape(str(record["as_of"] or "-"))}</span>'
             f'<span>状态口径 {html.escape(str(record["current_status_source"] or "日线"))}</span>'
             f'<span>涨停前条件 {record["pre_quote_price_condition_count"] or 0}/{record["pre_quote_price_condition_total"] or 0}</span>'
@@ -668,7 +874,8 @@ def render_html(
             f'<span>回撤 {_fmt(-(_finite(record["max_drawdown_250"]) or 0) * 100, 0, "%")}</span>'
             f'<span>当前距该轮高点 {_fmt((_finite(record["current_drawdown_from_decline_peak"]) or 0) * 100, 0, "%")}</span>'
             f'<span>低点后反弹 {_fmt((_finite(record["recovery_from_trough"]) or 0) * 100, 0, "%")}</span>'
-            f'<span>底部量能 {_fmt(record["bottom_volume_ratio"], 2)}x</span>'
+            f'<span>底部量能 {_fmt(record["bottom_volume_ratio"], 2)}x（{"已确认" if record["bottom_volume_confirmed"] else "未确认"}）</span>'
+            f'<span>日K底部红量 {_fmt((_finite(record["bottom_red_volume_share"]) or 0) * 100, 0, "%")} / {record["bottom_red_high_volume_days"] or 0}根放量柱（{"已确认" if record["bottom_red_volume_confirmed"] else "未确认"}）</span>'
             f'<span>右侧量 {_fmt(record["right_edge_volume_ratio"], 2)}x（最新 {_fmt(record["latest_volume_ratio"], 2)}x / 3日 {_fmt(record["recent_3d_volume_ratio"], 2)}x）</span>'
             f'<span>成交量日期 {html.escape(str(record["volume_as_of"] or "-"))}</span>'
             f'<span>缺口日期/幅度 {html.escape(str(record["gap_date"] or "-"))} / {_fmt((_finite(record["gap_size_pct"]) or 0) * 100, 1, "%")}</span>'
@@ -682,19 +889,35 @@ def render_html(
             f'<span>技术 {_fmt(record["technical_score"], 1)}</span>'
             f'<span>相似 {_fmt(record["similarity_score"], 1)}（{_timeframe_label(record["similar_reference_timeframe"])}）</span>'
             f'<span>资金 {_fmt(record["fund_score"], 1)}</span>'
+            f'<span>所属板块（搜狐） <b>{html.escape(str(record["sector_name"] or "未取得"))}</b></span>'
+            f'<span>热度对应板块（新浪） <b>{html.escape(str(record["sector_board_name"] or "未取得"))}</b></span>'
+            f'<span>板块热度 {"热门（当日前10且上涨）" if record["sector_board_hot"] is True else "非前10" if record["sector_board_hot"] is False else "不可判定"}</span>'
+            f'<span>板块涨幅/排名 {_fmt(record["sector_board_change_pct"], 2, "%")} / {record["sector_board_rank"] or "-"}/{record["sector_board_count"] or "-"}</span>'
+            f'<span>板块热门股 {"是（板内涨幅前5且上涨）" if record["sector_hot_stock"] is True else "否" if record["sector_hot_stock"] is False else "不可判定"}</span>'
+            f'<span>板内涨幅排名 {record["sector_member_rank"] or "-"}/{record["sector_member_count"] or "-"}</span>'
+            f'<span>板块数据来源 {html.escape(str(record["sector_source"] or "未取得"))}；{html.escape(str(record["sector_board_source"] or "热度未取得"))}</span>'
             f'<span>热点来源 {html.escape("、".join(record["source_tags"]) or "未知")}</span>'
             f'<span>实时行情 {html.escape(str(record["quote_source"] or "缺失"))}</span>'
             f'<span>实时缓存 {html.escape(str(record["quote_cache_saved_at"] or "-"))}</span>'
             f'<span>全市场快照换手/量比 {_fmt(record["universe_turnover"], 1, "%")} / {_fmt(record["universe_volume_ratio"], 2)}x</span>'
             f'<span>日线来源 {html.escape(str(record["history_source"] or "未知"))}</span>'
             f'<span>日线数据 {"最近缓存" if record["history_cache_stale"] else "本轮/有效缓存"}</span>'
-            f'<span>资金数据 {"最近缓存" if record["fund_cache_stale"] else "本轮/有效缓存" if record["fund_score"] is not None else "缺失"}</span>'
+            f'<span>资金数据 {html.escape(str(record["fund_data_status"] or "缺失"))}</span>'
             f'<span>相似样本 {html.escape(str(record["similar_reference"] or "-"))}（{_timeframe_label(record["similar_reference_timeframe"])}）</span></div>'
+            f'<p class="sector-explanation"><strong>板块热度依据：</strong>{html.escape(str(record["sector_hot_reason"] or "该股票不在本轮推荐/缺口板块补充范围内"))}</p>'
             f'<div class="conditions">{condition_items}</div>'
             f'<h4>近 60 日日线</h4>{candlestick_svg(candidate.history)}'
             f'{fund_block}<div class="notes"><div><h4>加分证据</h4><ul>{reason_items}</ul></div>'
             f'<div><h4>风险与反证</h4><ul>{risk_items}</ul></div></div></section>'
         )
+        if candidate.code in general_detail_codes:
+            details.append(
+                detail_card.replace("__DETAIL_ID__", f"stock-{candidate.code}")
+            )
+        if candidate.code in gap_detail_codes:
+            gap_details.append(
+                detail_card.replace("__DETAIL_ID__", f"gap-stock-{candidate.code}")
+            )
 
     issue_rows = "".join(
         f"<tr><td>{html.escape(issue.scope)}</td><td>{html.escape(issue.code or '-')}</td><td>{html.escape(issue.message)}</td></tr>"
@@ -734,9 +957,10 @@ def render_html(
             return f'<p class="subtle">{html.escape(empty_text)}</p>'
         items = []
         for record in records[:12]:
+            detail_anchor = detail_anchor_by_code.get(record["code"])
             local_link = (
-                f'<a class="status-detail-link" href="#stock-{record["code"]}" title="查看本页K线和筛选明细">本页</a>'
-                if record["code"] in detail_codes
+                f'<a class="status-detail-link" href="#{detail_anchor}" title="查看本页K线和筛选明细">本页</a>'
+                if detail_anchor
                 else ""
             )
             identity = (
@@ -748,8 +972,8 @@ def render_html(
             )
             items.append(
                 f'<li>{identity}<span>{_signed_pct(record["current_change_pct"])} · '
-                f'右侧量 {_fmt(record["right_edge_volume_ratio"], 2)}x · '
-                f'缺口 {record["gap_condition_count"] or 0}/{record["gap_condition_total"] or 0} · '
+                f'5日 {_signed_ratio(record["return_5d"])} · '
+                f'红量 {_fmt((_finite(record["bottom_red_volume_share"]) or 0) * 100, 0, "%")} · '
                 f'{html.escape(str(record["decision"]))}</span></li>'
             )
         if len(records) > 12:
@@ -760,8 +984,8 @@ def render_html(
 
     status_groups = (
         '<div class="status-groups">'
-        f'<section class="status-group"><h3>尚未涨停候选 <span>{len(not_limit_candidates)}</span></h3>'
-        f'{status_list(not_limit_candidates, "本轮没有尚未涨停的形态候选")}</section>'
+        f'<section class="status-group"><h3>日K低位红量候选 <span>{len(not_limit_candidates)}</span></h3>'
+        f'{status_list(not_limit_candidates, "本轮没有高位回落、底部红量占优且尚未大涨的日K候选")}</section>'
         f'<section class="status-group limit-group"><h3>已涨停形态候选 <span>{len(limit_up_candidates)}</span></h3>'
         f'{status_list(limit_up_candidates, "本轮没有已涨停的形态候选")}</section></div>'
     )
@@ -769,21 +993,22 @@ def render_html(
         [
             _sortable_header(0, "#", first_direction="asc", initial=True),
             _sortable_header(1, "股票", kind="text", first_direction="asc"),
-            _sortable_header(2, "结论", kind="text", first_direction="asc"),
-            _sortable_header(3, "当前状态"),
-            _sortable_header(4, "当前涨幅"),
-            _sortable_header(5, "条件"),
-            _sortable_header(6, "高到低 / 当前距高"),
-            _sortable_header(7, "底部量"),
-            _sortable_header(8, "右侧量"),
-            _sortable_header(9, "缺口平台"),
-            _sortable_header(10, "缺口后量"),
-            _sortable_header(11, "近120日涨/跌停"),
-            _sortable_header(12, "有效换手"),
-            _sortable_header(13, "资金收敛比"),
-            _sortable_header(14, "资金交叉"),
-            _sortable_header(15, "红线在上"),
-            _sortable_header(16, "总分"),
+            _sortable_header(2, "板块 / 热度", kind="text", first_direction="asc"),
+            _sortable_header(3, "结论", kind="text", first_direction="asc"),
+            _sortable_header(4, "当前状态"),
+            _sortable_header(5, "当前涨幅"),
+            _sortable_header(6, "条件"),
+            _sortable_header(7, "高到低 / 当前距高"),
+            _sortable_header(8, "底部量"),
+            _sortable_header(9, "右侧量"),
+            _sortable_header(10, "缺口平台"),
+            _sortable_header(11, "缺口后量"),
+            _sortable_header(12, "近120日涨/跌停"),
+            _sortable_header(13, "有效换手"),
+            _sortable_header(14, "资金收敛比"),
+            _sortable_header(15, "资金交叉"),
+            _sortable_header(16, "红线在上"),
+            _sortable_header(17, "总分"),
         ]
     ) + '<th>查看</th>'
     table_script = """<script>
@@ -791,18 +1016,54 @@ def render_html(
   const table = document.getElementById("candidate-table");
   if (!table) return;
   const tbody = table.tBodies[0];
-  const rows = Array.from(tbody.rows);
+  const rowTemplate = document.getElementById("candidate-row-template");
+  const rows = Array.from(rowTemplate.content.querySelectorAll("tr"));
   const sortButtons = Array.from(table.querySelectorAll(".sort-button"));
   const filterButtons = Array.from(document.querySelectorAll("[data-table-filter]"));
-  const favoriteButtons = Array.from(document.querySelectorAll("[data-favorite-code]"));
-  const copyCodeButtons = Array.from(document.querySelectorAll("[data-copy-code]"));
+  const detailFavoriteButtons = Array.from(document.querySelectorAll(".candidate [data-favorite-code]"));
+  const detailCopyCodeButtons = Array.from(document.querySelectorAll(".candidate [data-copy-code]"));
+  const favoriteButtons = rows.flatMap((row) => Array.from(row.querySelectorAll("[data-favorite-code]"))).concat(detailFavoriteButtons);
+  const copyCodeButtons = rows.flatMap((row) => Array.from(row.querySelectorAll("[data-copy-code]"))).concat(detailCopyCodeButtons);
   const favoriteFilterButton = document.querySelector('[data-table-filter="favorites"]');
   const visibleCount = document.getElementById("visible-count");
   const emptyState = document.getElementById("table-empty");
+  const previousPageButton = document.getElementById("previous-page");
+  const nextPageButton = document.getElementById("next-page");
+  const pageStatus = document.getElementById("page-status");
+  const pageSizeSelect = document.getElementById("page-size");
   const favoriteStorageKey = "ashare-screener:favorites:v1";
   rows.forEach((row, index) => { row.dataset.stableIndex = String(index); });
   let activeFilter = "all";
   let sortState = { column: 0, direction: "asc", type: "number" };
+  let currentPage = 1;
+
+  const scrollToStockWithoutHash = (hash, behavior = "smooth") => {
+    if (!/^#(?:gap-)?stock-\\d{6}$/.test(hash || "")) return false;
+    const target = document.getElementById(hash.slice(1));
+    if (!target) return false;
+    const disclosure = target.closest("details");
+    if (disclosure) disclosure.open = true;
+    target.scrollIntoView({ behavior, block: "start" });
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}`,
+    );
+    return true;
+  };
+
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest?.('a[href^="#stock-"],a[href^="#gap-stock-"]');
+    if (!link) return;
+    event.preventDefault();
+    scrollToStockWithoutHash(link.getAttribute("href"));
+  });
+
+  if (/^#(?:gap-)?stock-\\d{6}$/.test(window.location.hash)) {
+    window.requestAnimationFrame(() => {
+      scrollToStockWithoutHash(window.location.hash, "auto");
+    });
+  }
 
   const loadFavorites = () => {
     try {
@@ -839,6 +1100,7 @@ def render_html(
     });
     const currentFavoriteCount = rows.filter((row) => row.dataset.favorite === "true").length;
     favoriteFilterButton.textContent = `收藏 ${currentFavoriteCount}`;
+    favoriteFilterButton.title = "当前浏览器的本机收藏";
   };
 
   const compareRows = (left, right) => {
@@ -862,27 +1124,35 @@ def render_html(
     return sortState.direction === "asc" ? result : -result;
   };
 
+  const matchesActiveFilter = (row) => activeFilter === "all"
+    || row.dataset.viewGroup === activeFilter
+    || (activeFilter === "favorites" && row.dataset.favorite === "true")
+    || (activeFilter === "right-volume"
+      && row.dataset.viewGroup === "not-limit"
+      && row.dataset.rightVolume === "true")
+    || (activeFilter === "gap-setup"
+      && row.dataset.gapSetup === "true");
+
   const render = () => {
-    rows.sort(compareRows).forEach((row) => tbody.appendChild(row));
-    let shown = 0;
-    rows.forEach((row) => {
-      const visible = activeFilter === "all"
-        || row.dataset.viewGroup === activeFilter
-        || (activeFilter === "favorites" && row.dataset.favorite === "true")
-        || (activeFilter === "right-volume"
-          && row.dataset.viewGroup === "not-limit"
-          && row.dataset.rightVolume === "true")
-        || (activeFilter === "gap-setup"
-          && row.dataset.viewGroup === "not-limit"
-          && row.dataset.gapSetup === "true");
-      row.hidden = !visible;
-      if (visible) {
-        shown += 1;
-        row.querySelector(".rank-cell").textContent = String(shown);
-      }
+    const filteredRows = rows.sort(compareRows).filter(matchesActiveFilter);
+    const pageSize = Number(pageSizeSelect.value);
+    const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+    currentPage = Math.min(currentPage, pageCount);
+    const start = (currentPage - 1) * pageSize;
+    const pageRows = filteredRows.slice(start, start + pageSize);
+    pageRows.forEach((row, index) => {
+      row.hidden = false;
+      row.querySelector(".rank-cell").textContent = String(start + index + 1);
     });
-    visibleCount.textContent = `显示 ${shown} / ${rows.length}`;
-    emptyState.hidden = shown !== 0;
+    tbody.replaceChildren(...pageRows);
+    const end = Math.min(start + pageRows.length, filteredRows.length);
+    visibleCount.textContent = filteredRows.length
+      ? `显示 ${start + 1}-${end} / ${filteredRows.length}`
+      : `显示 0 / ${rows.length}`;
+    pageStatus.textContent = `${currentPage} / ${pageCount}`;
+    previousPageButton.disabled = currentPage <= 1;
+    nextPageButton.disabled = currentPage >= pageCount;
+    emptyState.hidden = filteredRows.length !== 0;
   };
 
   sortButtons.forEach((button) => {
@@ -907,6 +1177,7 @@ def render_html(
           ? (sortState.direction === "asc" ? "↑" : "↓")
           : "↕";
       });
+      currentPage = 1;
       render();
     });
   });
@@ -919,8 +1190,25 @@ def render_html(
         item.classList.toggle("active", selected);
         item.setAttribute("aria-pressed", String(selected));
       });
+      currentPage = 1;
       render();
     });
+  });
+
+  previousPageButton.addEventListener("click", () => {
+    if (currentPage <= 1) return;
+    currentPage -= 1;
+    render();
+  });
+
+  nextPageButton.addEventListener("click", () => {
+    currentPage += 1;
+    render();
+  });
+
+  pageSizeSelect.addEventListener("change", () => {
+    currentPage = 1;
+    render();
   });
 
   favoriteButtons.forEach((button) => {
@@ -1009,13 +1297,19 @@ main {{ max-width:1220px; margin:0 auto; padding:0 24px 40px; }}
 .status-detail-link {{ color:var(--blue) !important; font-size:12px; white-space:nowrap; }}
 .status-more {{ justify-content:flex-end !important; color:var(--muted); }}
 .table-toolbar {{ display:flex; justify-content:space-between; align-items:center; gap:16px; margin:0 0 8px; }}
+.table-status {{ display:flex; align-items:center; justify-content:flex-end; gap:10px; min-width:260px; }}
+.pagination {{ display:flex; align-items:center; gap:6px; }}
+.pagination button {{ display:inline-grid; place-items:center; width:32px; height:32px; padding:0; border:1px solid #bfc7d1; border-radius:3px; color:#315f98; background:#fff; font:20px/1 Arial,sans-serif; cursor:pointer; }}
+.pagination button:disabled {{ color:#9ca3ad; background:#f3f5f7; cursor:default; }}
+.pagination select {{ height:32px; border:1px solid #bfc7d1; border-radius:3px; color:#3f4853; background:#fff; font:inherit; }}
+#page-status {{ min-width:48px; text-align:center; font-variant-numeric:tabular-nums; }}
 .segmented {{ display:inline-flex; border:1px solid #bfc7d1; border-radius:4px; overflow:hidden; }}
 .segmented button {{ min-height:34px; padding:6px 11px; border:0; border-right:1px solid #bfc7d1; color:#3f4853; background:#fff; font:inherit; cursor:pointer; }}
 .segmented button:last-child {{ border-right:0; }}
 .segmented button.active {{ color:#fff; background:#315f98; }}
 .segmented button:focus-visible, .sort-button:focus-visible, .favorite-button:focus-visible {{ outline:2px solid #1b66b1; outline-offset:2px; }}
 .table-wrap {{ overflow-x:auto; border:1px solid var(--line); }}
- table {{ border-collapse:collapse; width:100%; min-width:1640px; }}
+ table {{ border-collapse:collapse; width:100%; min-width:1840px; }}
 th,td {{ padding:9px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }}
 th {{ background:var(--soft); color:#4c5560; font-size:12px; position:sticky; top:0; }}
 .sort-button {{ display:flex; align-items:center; justify-content:space-between; gap:5px; width:100%; min-height:24px; padding:0; border:0; color:inherit; background:transparent; font:inherit; font-weight:600; text-align:inherit; white-space:nowrap; cursor:pointer; }}
@@ -1031,6 +1325,8 @@ th {{ background:var(--soft); color:#4c5560; font-size:12px; position:sticky; to
 .stock-actions a,.copy-code-button {{ display:inline-flex; align-items:center; min-height:27px; padding:3px 7px; border:1px solid #c8ced6; border-radius:3px; color:#315f98; background:#fff; font:12px/1.2 "Microsoft YaHei","PingFang SC",Arial,sans-serif; text-decoration:none; cursor:pointer; white-space:nowrap; }}
 .stock-actions a:hover,.copy-code-button:hover {{ border-color:#315f98; background:#f2f6fb; }}
 .actions-cell {{ min-width:230px; }}
+.sector-cell {{ min-width:190px; }}
+.sector-flags {{ display:flex; flex-wrap:wrap; gap:4px; margin:5px 0; }}
 tbody tr:hover {{ background:#fafbfc; }}
 [hidden] {{ display:none !important; }}
 .numeric {{ text-align:right; font-variant-numeric:tabular-nums; }}
@@ -1042,12 +1338,19 @@ tbody tr:hover {{ background:#fafbfc; }}
 .state.watch {{ color:#fff; background:var(--blue); }}
 .state.danger {{ color:#fff; background:var(--amber); }}
 .state.muted {{ color:#4d5661; background:#e9edf1; }}
+.gap-review {{ margin:30px 0 10px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }}
+.gap-review > summary {{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 2px; color:var(--ink); cursor:pointer; }}
+.gap-review-title {{ font-size:20px; font-weight:700; }}
+.gap-review-hint {{ color:var(--blue); font-size:13px; white-space:nowrap; }}
+.gap-review[open] > summary {{ border-bottom:1px solid var(--line); }}
+.gap-review-body {{ padding-top:4px; }}
 .candidate {{ padding:24px 0 30px; border-bottom:1px solid var(--line); }}
 .candidate-head {{ display:flex; justify-content:space-between; gap:20px; align-items:flex-start; }}
 .candidate-head p {{ color:var(--muted); }}
 .score {{ font-size:28px; font-weight:700; text-align:right; min-width:76px; font-variant-numeric:tabular-nums; }}
 .score small {{ display:block; color:var(--muted); font-size:11px; font-weight:500; }}
 .metrics {{ display:flex; flex-wrap:wrap; gap:8px 18px; padding:9px 0; color:#4d5661; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }}
+.sector-explanation {{ margin:10px 0 0; padding:9px 11px; color:#34495e; background:#f2f6fb; border-left:3px solid var(--blue); }}
 .conditions {{ display:flex; flex-wrap:wrap; gap:6px; padding:10px 0 2px; }}
 .condition {{ padding:3px 7px; border-radius:3px; font-size:12px; }}
 .condition.pass {{ color:#075e54; background:#e3f4f0; }}
@@ -1059,34 +1362,48 @@ tbody tr:hover {{ background:#fafbfc; }}
 ul {{ margin:6px 0 0; padding-left:20px; line-height:1.7; }}
 .issues td {{ font-size:12px; }}
 footer {{ color:var(--muted); border-top:1px solid var(--line); padding:16px 0; margin-top:30px; line-height:1.7; }}
-@media (max-width:720px) {{ header {{ padding:18px 16px 13px; }} main {{ padding:0 12px 28px; }} .status-groups,.notes {{ grid-template-columns:1fr; gap:4px; }} .status-group + .status-group {{ border-top:1px solid var(--line); }} .table-toolbar {{ align-items:flex-start; flex-direction:column; }} .segmented {{ display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); width:100%; gap:1px; background:#bfc7d1; }} .segmented button {{ grid-column:span 2; min-width:0; min-height:46px; padding:6px 7px; border:0; }} .segmented button:nth-last-child(-n+2) {{ grid-column:span 3; }} .candidate-head {{ align-items:center; }} }}
+@media (max-width:720px) {{ header {{ padding:18px 16px 13px; }} main {{ padding:0 12px 28px; }} .status-groups,.notes {{ grid-template-columns:1fr; gap:4px; }} .status-group + .status-group {{ border-top:1px solid var(--line); }} .table-toolbar {{ align-items:flex-start; flex-direction:column; }} .table-status {{ justify-content:space-between; min-width:0; width:100%; }} .segmented {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; gap:1px; background:#bfc7d1; }} .segmented button,.segmented button:nth-last-child(-n+2) {{ grid-column:span 1; min-width:0; min-height:46px; padding:6px 7px; border:0; }} .candidate-head {{ align-items:center; }} }}
 </style>
 </head>
 <body>
 <header>
-  <div class="header-row"><div><h1>A股严格形态筛选报告</h1><p class="subtle">浏览器刷新本页会重新抓取数据并执行筛选</p></div><a class="refresh" href="/?force=1">重新扫描</a></div>
-  <div class="summary"><span>生成时间 <b>{generated}</b></span><span>状态 <b>{status_text}</b></span>{scope_summary}<span>实时行情 <b>{summary.get('current_quote_rows', 0)}</b></span><span>有效日线 <b>{summary.get('history_success', 0)}</b></span><span>模板 <b>{len(outcome.templates)}</b></span></div>
+  <div class="header-row"><div><h1>A股严格形态筛选报告</h1><p class="subtle">点击“重新扫描”按钮后抓取数据并执行筛选</p></div><a class="refresh" href="/?force=1">重新扫描</a></div>
+  <div class="summary"><span>生成时间 <b>{generated}</b></span><span>状态 <b>{status_text}</b></span>{scope_summary}<span>实时行情 <b>{summary.get('current_quote_rows', 0)}</b></span><span>有效日线 <b>{summary.get('history_success', 0)}</b></span><span>日K红量确认 <b>{summary.get('bottom_red_volume_confirmed', 0)}</b></span><span>低位红量 <b>{summary.get('early_bottom_matches', 0)}</b></span><span>板块分类 <b>{summary.get('sector_profile_success', 0)}/{summary.get('sector_target_count', 0)}</b></span><span>模板 <b>{len(outcome.templates)}</b></span></div>
   <div class="summary">{decision_summary}</div>
 </header>
 <main>
   <p class="notice">这是基于公开行情的研究候选清单，不是收益承诺或买入建议。当前状态优先使用{quote_scope_notice}的价格与涨跌幅，历史形态继续使用前复权日线；“待资金数据”不是完整匹配。</p>
-  <div class="source-note"><strong>行情复核：</strong>点击股票名称打开搜狐日/周/月K线、盘口与公司资料；“东财K线/F10”提供指标K线、资金、公告和F10。当前选股数据来自 AkShare 封装的腾讯与东方财富接口，不是华泰证券数据；也可复制六位代码后在华泰客户端直接输入。</div>
-  <div class="strategy-note"><strong>整体筛选提示</strong>第一门槛仍是高位大跌后处于底部；资金侧优先四线靠近、交织不乱且红线上穿。在此前提下，再优选近期向上跳空、收盘不回补、缺口上方横盘、均线转为向上且缺口后持续放量的形态。平潭发展仅作为“缺口平台”样本，不能覆盖第一门槛；光迅科技作为底部结构样本，其新缺口仍需等待横盘确认。</div>
+  <div class="source-note"><strong>行情与板块口径：</strong>点击股票名称打开搜狐日/周/月K线、盘口与公司资料；“东财K线/F10”提供指标K线、资金、公告和F10。当前选股数据来自 AkShare 封装的腾讯与东方财富接口，不是华泰证券数据。所属板块取自搜狐个股页；板块涨幅排名和板内个股排名取自新浪行业行情（经 AkShare）。热门板块定义为当日上涨且涨幅排名前10，板块热门股定义为板内上涨且涨幅排名前5；这是当日涨幅强度代理，不是资金流或真实人气排名。</div>
+  <div class="strategy-note"><strong>当前筛选重点</strong>全部按日K计算。先确认股价从高位明显回落并仍处于底部，再要求最近20个日K中红色上涨K线的成交量占比至少60%，且至少出现2根红色放量柱，同时排除已经明显上涨的股票。红绿量柱按日K收盘价与开盘价着色，只是买盘偏强代理，不等同于逐笔主动买单。</div>
   {status_groups}
   <h2>候选排序</h2>
   <div class="table-toolbar"><div class="segmented" role="group" aria-label="候选分组">
     <button type="button" class="active" data-table-filter="all" aria-pressed="true">全部 {len(candidates)}</button>
     <button type="button" data-table-filter="favorites" aria-pressed="false">收藏 0</button>
-    <button type="button" data-table-filter="not-limit" aria-pressed="false">尚未涨停 {len(not_limit_candidates)}</button>
+    <button type="button" data-table-filter="not-limit" aria-pressed="false">日K低位红量 {len(not_limit_candidates)}</button>
     <button type="button" data-table-filter="right-volume" aria-pressed="false">右侧放量 {len(right_volume_candidates)}</button>
     <button type="button" data-table-filter="gap-setup" aria-pressed="false">缺口趋势 {len(gap_setup_candidates)}</button>
     <button type="button" data-table-filter="limit-up" aria-pressed="false">已涨停形态 {len(limit_up_candidates)}</button>
-  </div><span id="visible-count" class="subtle"></span></div>
-  <div class="table-wrap"><table id="candidate-table"><thead><tr>{table_headers}</tr></thead><tbody>{''.join(table_rows)}</tbody></table></div>
+  </div><div class="table-status"><span id="visible-count" class="subtle"></span><div class="pagination" aria-label="候选分页">
+    <button type="button" id="previous-page" aria-label="上一页" title="上一页">‹</button>
+    <span id="page-status" class="subtle"></span>
+    <button type="button" id="next-page" aria-label="下一页" title="下一页">›</button>
+    <select id="page-size" aria-label="每页候选数量" title="每页候选数量"><option value="25">25条</option><option value="50" selected>50条</option><option value="100">100条</option></select>
+  </div></div></div>
+  <div class="table-wrap"><table id="candidate-table"><thead><tr>{table_headers}</tr></thead><tbody></tbody></table></div>
+  <template id="candidate-row-template">{''.join(table_rows)}</template>
   <p id="table-empty" class="subtle" hidden>该分组本轮没有候选。</p>
   <p class="subtle">参考模板：{html.escape(template_text)}</p>
   <h2>逐股复核（前 {detail_count} 只）</h2>
-  {''.join(details)}
+  <p class="subtle">默认展示综合排序靠前股票的日K图、板块热度、资金博弈代理、条件证据和风险。</p>
+  {''.join(details) or '<p class="subtle">本轮没有可展示的逐股复核候选。</p>'}
+  <details class="gap-review" id="gap-review">
+    <summary><span class="gap-review-title">缺口趋势复核（前 {gap_detail_count} 只）</span><span class="gap-review-hint">点击展开</span></summary>
+    <div class="gap-review-body">
+      <p class="subtle">这是额外的缺口趋势板块；展开后逐只查看缺口候选的完整日K图、板块热度、资金博弈代理、条件证据和风险。</p>
+      {''.join(gap_details) or '<p class="subtle">本轮没有达到缺口趋势复核门槛的候选。</p>'}
+    </div>
+  </details>
   <h2>数据问题</h2>
   <div class="table-wrap"><table class="issues"><thead><tr><th>环节</th><th>代码</th><th>信息</th></tr></thead><tbody>{issue_rows}</tbody></table></div>
   <footer>{html.escape(scope_footer)} 排序只比较进入日线精筛的股票，并会随行情变化。第三方接口字段或访问限制变化时，报告会显示失败项；数据不足的股票不会被静默当作低分股票处理。</footer>

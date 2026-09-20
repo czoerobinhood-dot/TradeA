@@ -320,7 +320,8 @@ def calculate_price_metrics(
     base_high = _number(base_slice["high"].max())
     base_range = base_high / base_low - 1 if base_low > 0 else float("nan")
 
-    bottom_volume = frame["volume"].tail(20)
+    bottom_frame = frame.tail(20).copy()
+    bottom_volume = pd.to_numeric(bottom_frame["volume"], errors="coerce")
     prior_volume = frame["volume"].iloc[-90:-20]
     prior_volume_median = _number(prior_volume.median())
     bottom_volume_median = _number(bottom_volume.median())
@@ -331,6 +332,27 @@ def calculate_price_metrics(
     )
     bottom_high_volume_days = (
         int((bottom_volume >= prior_volume_median * 1.5).sum())
+        if prior_volume_median > 0
+        else 0
+    )
+    bottom_red_mask = pd.to_numeric(
+        bottom_frame["close"], errors="coerce"
+    ) >= pd.to_numeric(bottom_frame["open"], errors="coerce")
+    bottom_total_volume = _number(bottom_volume.sum())
+    bottom_red_volume = _number(bottom_volume.where(bottom_red_mask).sum())
+    bottom_green_volume = _number(bottom_volume.where(~bottom_red_mask).sum())
+    bottom_red_volume_share = (
+        bottom_red_volume / bottom_total_volume
+        if bottom_total_volume > 0
+        else float("nan")
+    )
+    bottom_red_high_volume_days = (
+        int(
+            (
+                bottom_red_mask
+                & (bottom_volume >= prior_volume_median * 1.5)
+            ).sum()
+        )
         if prior_volume_median > 0
         else 0
     )
@@ -360,6 +382,26 @@ def calculate_price_metrics(
     right_edge_volume_expanded = bool(
         math.isfinite(right_edge_volume_ratio)
         and right_edge_volume_ratio >= strict_rules["right_edge_volume_ratio_min"]
+    )
+    bottom_volume_expanded = bool(
+        bottom_volume_ratio >= strict_rules["bottom_volume_ratio_min"]
+        or bottom_high_volume_days
+        >= int(strict_rules["bottom_high_volume_days_min"])
+    )
+    bottom_volume_confirmed = bool(
+        bottom_volume_expanded
+        and (
+            bottom_volume_ratio >= strict_rules["bottom_volume_ratio_min"]
+            or recent_3d_volume_ratio
+            >= strict_rules["right_edge_volume_ratio_min"]
+        )
+    )
+    bottom_red_volume_confirmed = bool(
+        bottom_volume_confirmed
+        and bottom_red_volume_share
+        >= strict_rules["bottom_red_volume_share_min"]
+        and bottom_red_high_volume_days
+        >= int(strict_rules["bottom_red_high_volume_days_min"])
     )
 
     ma20_now = _number(current["ma20"])
@@ -435,14 +477,34 @@ def calculate_price_metrics(
         quote_is_current and quote_pct >= rate * 100 - 0.5
     )
     limit_up_today = limit_up_from_quote if quote_is_current else limit_up_from_price
-    entry_late = bool(
-        limit_up_today
-        or return_5d > strict_rules["max_return_5d"]
-        or extension_ma20 > strict_rules["max_extension_ma20"]
-        or recovery_from_trough > strict_rules["max_recovery_from_trough"]
-        or current_drawdown_from_decline_peak
-        > -strict_rules["current_below_decline_peak_min"]
+    rise_pressure = max(
+        0.0,
+        return_1d / max(strict_rules["max_return_1d"], 1e-9),
+        return_5d / max(strict_rules["max_return_5d"], 1e-9),
+        return_20d / max(strict_rules["max_return_20d"], 1e-9),
+        extension_ma20 / max(strict_rules["max_extension_ma20"], 1e-9),
+        recovery_from_trough
+        / max(strict_rules["max_recovery_from_trough"], 1e-9),
     )
+    entry_late_reasons = []
+    if limit_up_today:
+        entry_late_reasons.append("当前已经涨停")
+    if return_1d > strict_rules["max_return_1d"]:
+        entry_late_reasons.append(f"单日上涨 {return_1d:.1%}")
+    if return_5d > strict_rules["max_return_5d"]:
+        entry_late_reasons.append(f"5日上涨 {return_5d:.1%}")
+    if return_20d > strict_rules["max_return_20d"]:
+        entry_late_reasons.append(f"20日上涨 {return_20d:.1%}")
+    if extension_ma20 > strict_rules["max_extension_ma20"]:
+        entry_late_reasons.append(f"高于20日线 {extension_ma20:.1%}")
+    if recovery_from_trough > strict_rules["max_recovery_from_trough"]:
+        entry_late_reasons.append(f"低点后反弹 {recovery_from_trough:.1%}")
+    if (
+        current_drawdown_from_decline_peak
+        > -strict_rules["current_below_decline_peak_min"]
+    ):
+        entry_late_reasons.append("已接近前期高位")
+    entry_late = bool(entry_late_reasons)
 
     drawdown_around_half = bool(
         strict_rules["drawdown_min"]
@@ -462,11 +524,9 @@ def calculate_price_metrics(
     price_conditions = {
         "decline_into_current_base": decline_into_current_base,
         "drawdown_around_half": drawdown_around_half,
-        "bottom_volume_expanded": bool(
-            bottom_volume_ratio >= strict_rules["bottom_volume_ratio_min"]
-            or bottom_high_volume_days
-            >= int(strict_rules["bottom_high_volume_days_min"])
-        ),
+        "bottom_volume_expanded": bottom_volume_expanded,
+        "bottom_volume_confirmed": bottom_volume_confirmed,
+        "bottom_red_volume_confirmed": bottom_red_volume_confirmed,
         "repeated_limit_activity": bool(
             (
                 limit_up_count >= int(strict_rules["limit_up_min"])
@@ -484,12 +544,17 @@ def calculate_price_metrics(
     }
     core_names = (
         "decline_into_current_base",
-        "bottom_volume_expanded",
+        "bottom_red_volume_confirmed",
         "repeated_limit_activity",
         "turnover_near_target",
         "bottom_consolidated",
     )
     price_core_match = all(price_conditions[name] for name in core_names)
+    early_bottom_match = bool(
+        decline_into_current_base
+        and bottom_red_volume_confirmed
+        and not entry_late
+    )
 
     result: dict[str, Any] = {
         "as_of": pd.Timestamp(current["date"]).date().isoformat(),
@@ -521,6 +586,12 @@ def calculate_price_metrics(
         "base_range": base_range,
         "bottom_volume_ratio": bottom_volume_ratio,
         "bottom_high_volume_days": bottom_high_volume_days,
+        "bottom_volume_confirmed": bottom_volume_confirmed,
+        "bottom_red_volume": bottom_red_volume,
+        "bottom_green_volume": bottom_green_volume,
+        "bottom_red_volume_share": bottom_red_volume_share,
+        "bottom_red_high_volume_days": bottom_red_high_volume_days,
+        "bottom_red_volume_confirmed": bottom_red_volume_confirmed,
         "latest_volume_ratio": latest_volume_ratio,
         "recent_3d_volume_ratio": recent_3d_volume_ratio,
         "right_edge_volume_ratio": right_edge_volume_ratio,
@@ -558,6 +629,9 @@ def calculate_price_metrics(
         "limit_down_count_120": limit_down_count,
         "limit_up_today": limit_up_today,
         "entry_late": entry_late,
+        "entry_late_reasons": entry_late_reasons,
+        "rise_pressure": rise_pressure,
+        "early_bottom_match": early_bottom_match,
         "price_conditions": price_conditions,
         "price_condition_count": int(sum(price_conditions.values())),
         "price_condition_total": len(price_conditions),
@@ -582,7 +656,12 @@ def score_price_pattern(
     drawdown = -_number(metrics.get("max_drawdown_250"), 0.0)
     base_range = _number(metrics.get("base_range"), 1.0)
     bottom_volume_ratio = _number(metrics.get("bottom_volume_ratio"), 0.0)
-    high_volume_days = int(_number(metrics.get("bottom_high_volume_days"), 0.0))
+    bottom_red_volume_share = _number(
+        metrics.get("bottom_red_volume_share"), 0.0
+    )
+    bottom_red_high_volume_days = int(
+        _number(metrics.get("bottom_red_high_volume_days"), 0.0)
+    )
     latest_volume_ratio = _number(metrics.get("latest_volume_ratio"), 0.0)
     recent_3d_volume_ratio = _number(metrics.get("recent_3d_volume_ratio"), 0.0)
     right_edge_volume_ratio = _number(metrics.get("right_edge_volume_ratio"), 0.0)
@@ -594,8 +673,13 @@ def score_price_pattern(
     close = _number(metrics.get("close"), 0.0)
     ma20 = _number(metrics.get("ma20"), 0.0)
     recovery = _number(metrics.get("recovery_from_trough"), 1.0)
+    return_1d = _number(metrics.get("return_1d"), 0.0)
+    return_5d = _number(metrics.get("return_5d"), 0.0)
+    return_20d = _number(metrics.get("return_20d"), 0.0)
+    extension_ma20 = _number(metrics.get("extension_ma20"), 0.0)
     conditions = metrics.get("price_conditions", {})
     entry_late = bool(metrics.get("entry_late"))
+    entry_late_reasons = list(metrics.get("entry_late_reasons", []))
     gap_conditions = metrics.get("gap_conditions", {})
     gap_preference_score = _number(metrics.get("gap_preference_score"), 0.0)
 
@@ -636,15 +720,34 @@ def score_price_pattern(
     else:
         risks.append("价格尚未形成紧凑底部，或已离低点过远")
 
-    volume_score = 8 * _clip((bottom_volume_ratio - 0.75) / 0.65, 0, 1)
-    if conditions.get("bottom_volume_expanded"):
-        reasons.append(
-            f"底部量能为此前的 {bottom_volume_ratio:.2f} 倍，放量日 {high_volume_days} 天"
+    volume_score = 12 * _clip((bottom_volume_ratio - 0.75) / 0.65, 0, 1)
+    red_volume_score = 10 * _clip(
+        (
+            bottom_red_volume_share
+            - strict_rules["bottom_red_volume_share_min"]
         )
+        / max(1 - strict_rules["bottom_red_volume_share_min"], 0.01),
+        0,
+        1,
+    )
+    if conditions.get("bottom_red_volume_confirmed"):
+        reasons.append(
+            f"日K底部红量确认：红量占比 {bottom_red_volume_share:.0%}、"
+            f"红色放量柱 {bottom_red_high_volume_days} 根；"
+            f"20日量能 {bottom_volume_ratio:.2f} 倍、近3日均量 "
+            f"{recent_3d_volume_ratio:.2f} 倍"
+        )
+    elif conditions.get("bottom_volume_confirmed"):
+        risks.append(
+            f"底部虽有放量，但红量占比仅 {bottom_red_volume_share:.0%}、"
+            f"红色放量柱 {bottom_red_high_volume_days} 根，绿量仍偏多"
+        )
+    elif conditions.get("bottom_volume_expanded"):
+        risks.append("底部出现过放量，但中位量或近3日均量尚未持续确认")
     else:
         risks.append("底部量能没有持续扩张")
 
-    right_edge_volume_score = 7 * _clip(
+    right_edge_volume_score = 8 * _clip(
         (right_edge_volume_ratio - 0.8) / 1.0, 0, 1
     )
     if metrics.get("right_edge_volume_expanded"):
@@ -658,8 +761,8 @@ def score_price_pattern(
             f"3日均量 {recent_3d_volume_ratio:.2f} 倍"
         )
 
-    limit_score = 11 * _clip(limit_up_count / 2, 0, 1)
-    limit_score += 7 * _clip(limit_down_count, 0, 1)
+    limit_score = 7 * _clip(limit_up_count / 2, 0, 1)
+    limit_score += 4 * _clip(limit_down_count, 0, 1)
     if conditions.get("repeated_limit_activity"):
         reasons.append(
             f"近120日涨停触及 {limit_up_count} 次、跌停触及 {limit_down_count} 次"
@@ -689,11 +792,15 @@ def score_price_pattern(
     if 0.94 <= breakout <= 1.08:
         reasons.append("价格靠近底部平台上沿")
 
-    entry_score = 0.0 if entry_late else 10.0
+    entry_score = 0.0 if entry_late else 15.0
     if entry_late:
-        risks.append("当日或近5日已经明显拉升，低位介入窗口已滞后")
+        detail = "、".join(entry_late_reasons) or "价格已离开低位"
+        risks.append(f"股价已经明显上涨：{detail}")
     else:
-        reasons.append("当前尚未涨停或明显远离20日线")
+        reasons.append(
+            f"股价尚未大涨：1日 {return_1d:+.1%}、5日 {return_5d:+.1%}、"
+            f"20日 {return_20d:+.1%}、距20日线 {extension_ma20:+.1%}"
+        )
 
     gap_bonus = 12 * _clip(gap_preference_score / 100, 0, 1)
     gap_date = metrics.get("gap_date")
@@ -728,6 +835,7 @@ def score_price_pattern(
             decline_score,
             base_score,
             volume_score,
+            red_volume_score,
             right_edge_volume_score,
             limit_score,
             turnover_score,
@@ -743,8 +851,10 @@ def score_price_pattern(
     condition_count = int(metrics.get("price_condition_count", 0))
     if entry_late:
         stage = "已启动"
-    elif bool(metrics.get("price_core_match")) and 0.94 <= breakout <= 1.08:
+    elif bool(metrics.get("early_bottom_match")) and 0.94 <= breakout <= 1.08:
         stage = "启动前"
+    elif bool(metrics.get("early_bottom_match")):
+        stage = "低位放量"
     elif condition_count >= 4:
         stage = "接近"
     elif conditions.get("drawdown_around_half") and conditions.get(

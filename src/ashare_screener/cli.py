@@ -6,7 +6,11 @@ from datetime import date, datetime
 from pathlib import Path
 
 from ashare_screener.config import ScreenConfig
-from ashare_screener.pages import export_pages_report
+from ashare_screener.pages import (
+    export_pages_report,
+    verify_pages_deployment,
+    verify_pages_export,
+)
 from ashare_screener.pipeline import Screener
 from ashare_screener.provider import AkshareProvider, DataSourceError
 from ashare_screener.report import write_reports
@@ -52,6 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
     web.add_argument("--host", default="127.0.0.1", help="监听地址")
     web.add_argument("--port", type=int, default=8765, help="监听端口")
     web.add_argument("--cooldown", type=int, default=30, help="重复扫描冷却秒数")
+    web.add_argument(
+        "--refresh-interval",
+        type=int,
+        default=0,
+        help="后台自动刷新行情的间隔秒数，0 表示关闭",
+    )
     web.add_argument("--top", type=int, help="覆盖报告展示数量")
     web.add_argument("--no-concepts", action="store_true", help="不读取热点概念板块")
     web.add_argument("--no-fund-flow", action="store_true", help="不读取四档资金流")
@@ -61,6 +71,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pages.add_argument("--source", default="reports/latest.html", help="源 HTML 报告")
     pages.add_argument("--output", default="site", help="Pages 输出目录")
+
+    verify_pages = subparsers.add_parser(
+        "verify-pages", help="校验本地 Pages 导出，并可回读线上生产站点"
+    )
+    verify_pages.add_argument("--source", default="reports/latest.html", help="源 HTML 报告")
+    verify_pages.add_argument("--output", default="site", help="Pages 输出目录")
+    verify_pages.add_argument("--url", help="可选的 Pages 生产地址")
 
     validate = subparsers.add_parser("validate", help="只校验配置文件")
     validate.add_argument("--config", default="config.example.json")
@@ -81,6 +98,20 @@ def main(argv: list[str] | None = None) -> int:
             for label, path in paths.items():
                 print(f"{label}: {path.resolve()}")
             return 0
+        if args.command == "verify-pages":
+            manifest = verify_pages_export(args.source, args.output)
+            print(
+                "本地 Pages 导出一致: "
+                f"报告时间={manifest['report']['generated_at']}, "
+                f"SHA256={manifest['report']['sha256']}"
+            )
+            if args.url:
+                result = verify_pages_deployment(args.output, args.url)
+                print(
+                    "线上 Pages 部署一致: "
+                    f"{result['url']}, 成员服务已连接"
+                )
+            return 0
         config_path = Path(args.config) if args.config else None
         config = ScreenConfig.from_file(config_path)
         if args.command == "validate":
@@ -91,6 +122,8 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("--top 必须大于 0")
             if args.cooldown < 0:
                 raise ValueError("--cooldown 不能小于 0")
+            if args.refresh_interval < 0:
+                raise ValueError("--refresh-interval 不能小于 0")
             serve(
                 config_path=config_path,
                 output_dir=args.output,
@@ -98,6 +131,7 @@ def main(argv: list[str] | None = None) -> int:
                 host=args.host,
                 port=args.port,
                 cooldown_seconds=args.cooldown,
+                auto_refresh_seconds=args.refresh_interval,
                 report_limit=args.top,
                 use_concepts=not args.no_concepts,
                 use_fund_flow=not args.no_fund_flow,

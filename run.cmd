@@ -11,5 +11,5 @@ if not exist "%PYTHON%" (
     exit /b 1
 )
 
-"%PYTHON%" -m ashare_screener serve --config "%ROOT%config.example.json" --output "%ROOT%reports" --port 8765 %*
+"%PYTHON%" -m ashare_screener serve --config "%ROOT%config.example.json" --output "%ROOT%reports" --port 8765 --refresh-interval 0 %*
 exit /b %ERRORLEVEL%

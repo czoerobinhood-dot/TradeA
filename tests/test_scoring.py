@@ -59,6 +59,20 @@ def test_classification_keeps_pre_quote_setup_in_limit_up_bucket():
     assert "当前已封涨停" in reason
 
 
+def test_classification_keeps_confirmed_bottom_limit_up_in_late_bucket():
+    decision, _ = classify_candidate(
+        {
+            "limit_up_today": True,
+            "pre_quote_primary_structure_match": False,
+            "pre_quote_price_condition_count": 5,
+            "price_conditions": {"drawdown_around_half": True},
+            "bottom_volume_confirmed": True,
+        }
+    )
+
+    assert decision == "已启动/错过低位"
+
+
 def test_classification_requires_fund_data_for_strict_result():
     decision, reason = classify_candidate(
         {
@@ -70,6 +84,9 @@ def test_classification_requires_fund_data_for_strict_result():
             "price_condition_count": 5,
             "price_condition_total": 6,
             "primary_structure_match": True,
+            "bottom_volume_confirmed": True,
+            "bottom_red_volume_confirmed": True,
+            "early_bottom_match": True,
         }
     )
     assert decision == "待资金数据"
@@ -87,9 +104,64 @@ def test_classification_requires_all_strict_gates():
             "strict_match": True,
             "near_match": True,
             "primary_structure_match": True,
+            "bottom_volume_confirmed": True,
+            "bottom_red_volume_confirmed": True,
         }
     )
     assert decision == "严格匹配"
+
+
+def test_classification_rejects_unconfirmed_bottom_volume():
+    decision, reason = classify_candidate(
+        {
+            "data_completeness": 0.60,
+            "fund_score": None,
+            "entry_late": False,
+            "price_condition_count": 6,
+            "primary_structure_match": True,
+            "bottom_volume_confirmed": False,
+        }
+    )
+
+    assert decision == "不符合"
+    assert "底部量能" in reason
+
+
+def test_classification_rejects_green_dominated_bottom_volume():
+    decision, reason = classify_candidate(
+        {
+            "data_completeness": 0.60,
+            "fund_score": None,
+            "entry_late": False,
+            "price_condition_count": 7,
+            "primary_structure_match": True,
+            "bottom_volume_confirmed": True,
+            "bottom_red_volume_confirmed": False,
+        }
+    )
+
+    assert decision == "不符合"
+    assert "绿量仍偏多" in reason
+
+
+def test_price_setup_remains_near_match_when_fund_shape_does_not_match():
+    decision, reason = classify_candidate(
+        {
+            "data_completeness": 1.0,
+            "fund_score": 20,
+            "entry_late": False,
+            "price_condition_count": 8,
+            "primary_structure_match": True,
+            "bottom_volume_confirmed": True,
+            "bottom_red_volume_confirmed": True,
+            "early_bottom_match": True,
+            "strict_match": False,
+            "near_match": False,
+        }
+    )
+
+    assert decision == "接近标准"
+    assert "资金四线尚未匹配" in reason
 
 
 def test_classification_rejects_historical_drawdown_after_full_recovery():

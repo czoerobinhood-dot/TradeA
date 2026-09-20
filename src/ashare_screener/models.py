@@ -18,6 +18,7 @@ class Candidate:
     calibration_role: str | None = None
     history: pd.DataFrame | None = None
     fund_flow: pd.DataFrame | None = None
+    fund_snapshot: pd.DataFrame | None = None
     metrics: dict[str, Any] = field(default_factory=dict)
     reasons: list[str] = field(default_factory=list)
     risks: list[str] = field(default_factory=list)

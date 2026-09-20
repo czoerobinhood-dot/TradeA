@@ -118,7 +118,7 @@
             </form>
             <form id="member-login-form" class="member-form" hidden>
               <label>账号<input name="username" minlength="3" maxlength="32" autocomplete="username" required></label>
-              <label>密码<input name="password" type="password" minlength="12" maxlength="128" autocomplete="current-password" required></label>
+              <label>密码<input name="password" type="password" minlength="4" maxlength="128" autocomplete="current-password" required></label>
               <div class="member-form-actions"><button class="member-button primary" type="submit">登录</button></div>
             </form>
           </div>
@@ -135,12 +135,16 @@
               <div class="member-section-head"><h3>共享收藏</h3><span id="shared-favorite-count" class="member-chip">0</span></div>
               <div id="shared-favorite-list" class="member-list"></div>
             </section>
+            <section id="member-admin-favorites-section" class="member-section" hidden>
+              <div class="member-section-head"><h3>成员收藏明细</h3><span id="member-admin-favorite-count" class="member-chip">0 人 · 0 条</span></div>
+              <div id="member-admin-favorite-list" class="member-list"></div>
+            </section>
             <section id="member-admin-section" class="member-section" hidden>
               <div class="member-section-head"><h3>成员管理</h3></div>
               <form id="member-create-form" class="member-form">
                 <label>成员名称<input name="displayName" maxlength="40" required></label>
                 <label>账号<input name="username" minlength="3" maxlength="32" required></label>
-                <label class="member-field-wide">初始密码<input name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>
+                <label class="member-field-wide">初始密码<input name="password" type="password" minlength="4" maxlength="128" autocomplete="new-password" required></label>
                 <div class="member-form-actions"><button class="member-button primary" type="submit">创建成员</button></div>
               </form>
               <div id="member-list" class="member-list"></div>
@@ -272,6 +276,12 @@
     const loginForm = $("#member-login-form");
     const sessionView = $("#member-session-view");
     const accountButton = $("#member-account-button");
+    const favoriteFilterButton = $('[data-table-filter="favorites"]');
+    if (favoriteFilterButton) {
+      favoriteFilterButton.title = state.user
+        ? "当前成员的云端收藏"
+        : "当前浏览器的本机收藏";
+    }
     authView.hidden = Boolean(state.user) || !state.serviceAvailable;
     sessionView.hidden = !state.user;
     setupForm.hidden = !state.serviceAvailable
@@ -299,10 +309,11 @@
     $("#member-display-name").textContent = state.user.displayName;
     $("#member-role").textContent = state.user.role === "admin" ? "管理员" : "成员";
     const isAdmin = state.user.role === "admin";
+    $("#member-admin-favorites-section").hidden = !isAdmin;
     $("#member-admin-section").hidden = !isAdmin;
     $("#training-review-section").hidden = !isAdmin;
     setMessage($("#member-dialog-message"));
-    renderSharedFavorites();
+    renderFavoriteViews();
     if (isAdmin) {
       renderMembers();
       renderFeedback();
@@ -334,6 +345,10 @@
       const meta = document.createElement("div");
       meta.className = "member-list-meta";
       meta.textContent = `${favorite.memberCount} 人收藏 · ${favorite.annotationCount} 条标注 · 首次添加 ${favorite.addedBy}`;
+      if (state.user?.role === "admin" && favorite.collectors?.length) {
+        const names = favorite.collectors.map((collector) => collector.displayName);
+        meta.textContent += ` · 收藏人 ${names.join("、")}`;
+      }
       main.append(title, meta);
       const actions = document.createElement("div");
       actions.className = "member-list-actions";
@@ -349,6 +364,69 @@
       row.append(main, actions);
       list.appendChild(row);
     }
+  }
+
+  function renderMemberFavoriteDetails() {
+    const list = $("#member-admin-favorite-list");
+    if (!list || state.user?.role !== "admin") return;
+    list.replaceChildren();
+
+    const owners = new Map();
+    let favoriteCount = 0;
+    for (const favorite of state.favorites) {
+      for (const collector of favorite.collectors || []) {
+        favoriteCount += 1;
+        if (!owners.has(collector.id)) {
+          owners.set(collector.id, { ...collector, favorites: [] });
+        }
+        owners.get(collector.id).favorites.push({
+          code: favorite.code,
+          name: favorite.name,
+        });
+      }
+    }
+
+    const ownerList = Array.from(owners.values()).sort((left, right) => {
+      if (left.role !== right.role) return left.role === "admin" ? -1 : 1;
+      return left.username.localeCompare(right.username, "zh-CN");
+    });
+    $("#member-admin-favorite-count").textContent = `${ownerList.length} 人 · ${favoriteCount} 条`;
+
+    if (!ownerList.length) {
+      list.appendChild(makeEmpty("暂无成员收藏"));
+      return;
+    }
+
+    for (const owner of ownerList) {
+      const row = document.createElement("div");
+      row.className = "member-list-row member-favorite-owner";
+      const main = document.createElement("div");
+      main.className = "member-list-main";
+      const title = document.createElement("strong");
+      title.textContent = `${owner.displayName} · ${owner.username}`;
+      const meta = document.createElement("div");
+      meta.className = "member-list-meta";
+      meta.textContent = `${owner.role === "admin" ? "管理员" : "成员"}${owner.disabled ? " · 已停用" : ""} · ${owner.favorites.length} 只收藏`;
+      const stocks = document.createElement("div");
+      stocks.className = "member-favorite-stock-list";
+      for (const favorite of owner.favorites) {
+        const link = document.createElement("a");
+        link.className = "member-favorite-stock-link";
+        link.href = `#stock-${favorite.code}`;
+        link.textContent = `${favorite.name} ${favorite.code}`;
+        link.title = "查看本页K线和筛选明细";
+        link.addEventListener("click", () => closeDialog($("#member-dialog")));
+        stocks.appendChild(link);
+      }
+      main.append(title, meta, stocks);
+      row.appendChild(main);
+      list.appendChild(row);
+    }
+  }
+
+  function renderFavoriteViews() {
+    renderSharedFavorites();
+    renderMemberFavoriteDetails();
   }
 
   function renderMembers() {
@@ -453,7 +531,7 @@
     const payload = await api("/api/favorites");
     state.favorites = payload.favorites || [];
     syncCloudFavorites();
-    renderSharedFavorites();
+    renderFavoriteViews();
   }
 
   async function loadAdminData() {
@@ -619,7 +697,7 @@
       });
       state.favorites = payload.favorites || [];
       syncCloudFavorites();
-      renderSharedFavorites();
+      renderFavoriteViews();
       notify("本机收藏已导入", "success");
     } catch (error) {
       handleError(error);
@@ -642,7 +720,7 @@
       );
       state.favorites = payload.favorites || [];
       syncCloudFavorites();
-      renderSharedFavorites();
+      renderFavoriteViews();
     } catch (error) {
       handleError(error);
     } finally {
