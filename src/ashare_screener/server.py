@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import html
+import ipaddress
 import json
+import os
 import socket
 import threading
 import time
@@ -12,6 +14,11 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from ashare_screener.config import ScreenConfig
+from ashare_screener.local_owner import (
+    LocalOwnerError,
+    LocalOwnerProxy,
+    OwnerConfigurationError,
+)
 from ashare_screener.pipeline import Screener
 from ashare_screener.provider import AkshareProvider
 from ashare_screener.report import write_reports
@@ -100,6 +107,21 @@ LIVE_STATUS_SCRIPT = """<script>
   window.setInterval(pollHealth, 10000);
 })();
 </script>"""
+LOCAL_OWNER_STYLESHEET = '<link rel="stylesheet" href="/member.css">'
+LOCAL_OWNER_CONFIG = "<script>window.__TRADEA_LOCAL_OWNER__ = true;</script>"
+LOCAL_OWNER_SCRIPT = '<script src="/member.js" defer></script>'
+LOCAL_OWNER_ASSETS = {
+    "/member.css": ("member.css", "text/css; charset=utf-8"),
+    "/member.js": ("member.js", "text/javascript; charset=utf-8"),
+}
+MAX_OWNER_REQUEST_BYTES = 2 * 1024 * 1024
+
+
+def _default_owner_vars_path() -> Path | None:
+    local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
+    if not local_appdata:
+        return None
+    return Path(local_appdata) / "TradeA" / "owner.vars"
 
 
 def _interval_label(seconds: int) -> str:
@@ -115,6 +137,7 @@ def inject_live_mode(
     *,
     report_revision: str | None,
     auto_refresh_seconds: int,
+    local_owner_enabled: bool = False,
 ) -> str:
     if auto_refresh_seconds > 0:
         status_text = "本地自动更新"
@@ -128,17 +151,24 @@ def inject_live_mode(
         f'<span id="live-status-text">{status_text}</span><span>· {interval_text}</span>'
         '<span id="live-status-detail" class="live-status-detail">等待状态</span></p>'
     )
+    if local_owner_enabled:
+        if page.count("</head>") != 1:
+            raise ValueError("报告格式不符合本机主管理员样式注入预期")
+        if LOCAL_OWNER_STYLESHEET in page or LOCAL_OWNER_SCRIPT in page:
+            raise ValueError("报告已经包含成员前端，拒绝重复注入")
+        page = page.replace(
+            "</head>", f"{LOCAL_OWNER_STYLESHEET}\n</head>", 1
+        )
+    body_runtime = LIVE_STATUS_SCRIPT.replace(
+        "__REPORT_REVISION__",
+        json.dumps(report_revision, ensure_ascii=False),
+    )
+    if local_owner_enabled:
+        body_runtime += f"\n{LOCAL_OWNER_CONFIG}\n{LOCAL_OWNER_SCRIPT}"
     replacements = (
         (LIVE_SUBTITLE, live_subtitle),
         ("</style>", f"{LIVE_STATUS_STYLE}</style>"),
-        (
-            "</body>",
-            LIVE_STATUS_SCRIPT.replace(
-                "__REPORT_REVISION__",
-                json.dumps(report_revision, ensure_ascii=False),
-            )
-            + "\n</body>",
-        ),
+        ("</body>", body_runtime + "\n</body>"),
     )
     for original, replacement in replacements:
         if page.count(original) != 1:
@@ -159,6 +189,8 @@ class ScanState:
         auto_refresh_seconds: int,
         use_concepts: bool,
         use_fund_flow: bool,
+        site_dir: Path | None = None,
+        owner_proxy: LocalOwnerProxy | None = None,
     ) -> None:
         self.config_path = config_path
         self.output_dir = output_dir
@@ -168,6 +200,8 @@ class ScanState:
         self.auto_refresh_seconds = auto_refresh_seconds
         self.use_concepts = use_concepts
         self.use_fund_flow = use_fund_flow
+        self.site_dir = site_dir
+        self.owner_proxy = owner_proxy
         self.lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._stop_event = threading.Event()
@@ -317,7 +351,24 @@ class ScanState:
             "report_revision": self.report_revision(),
             "scan_running": self.lock.locked(),
             "auto_refresh_seconds": self.auto_refresh_seconds,
+            "local_owner_enabled": self.owner_proxy is not None,
+            "local_owner_connected": bool(
+                self.owner_proxy and self.owner_proxy.connected
+            ),
         }
+
+    def member_asset(self, request_path: str) -> tuple[bytes, str] | None:
+        if self.owner_proxy is None or self.site_dir is None:
+            return None
+        asset = LOCAL_OWNER_ASSETS.get(request_path)
+        if asset is None:
+            return None
+        filename, content_type = asset
+        path = self.site_dir / filename
+        try:
+            return path.read_bytes(), content_type
+        except OSError:
+            return None
 
     def rendered_report(self) -> bytes:
         if not self.report_path.exists():
@@ -327,6 +378,7 @@ class ScanState:
             page,
             report_revision=self.report_revision(),
             auto_refresh_seconds=self.auto_refresh_seconds,
+            local_owner_enabled=self.owner_proxy is not None,
         ).encode("utf-8")
 
 
@@ -351,6 +403,11 @@ class RefreshingReportServer(ThreadingHTTPServer):
 class RefreshingReportHandler(BaseHTTPRequestHandler):
     server: RefreshingReportServer
 
+    def end_headers(self) -> None:
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+        super().end_headers()
+
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
         parsed = urlparse(self.path)
         if parsed.path == "/favicon.ico":
@@ -362,6 +419,12 @@ class RefreshingReportHandler(BaseHTTPRequestHandler):
                 self.server.scan_state.health(), ensure_ascii=False
             ).encode("utf-8")
             self._send_bytes(payload, "application/json; charset=utf-8")
+            return
+        if parsed.path in LOCAL_OWNER_ASSETS:
+            self._serve_member_asset(parsed.path)
+            return
+        if parsed.path.startswith("/api/"):
+            self._serve_owner_api("GET")
             return
         if parsed.path == "/report":
             self._serve_report(scan=False, force=False)
@@ -376,6 +439,113 @@ class RefreshingReportHandler(BaseHTTPRequestHandler):
             self._serve_report(scan=scan, force=force)
             return
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        self._serve_owner_api("POST")
+
+    def do_PUT(self) -> None:  # noqa: N802 - stdlib handler API
+        self._serve_owner_api("PUT")
+
+    def do_PATCH(self) -> None:  # noqa: N802 - stdlib handler API
+        self._serve_owner_api("PATCH")
+
+    def do_DELETE(self) -> None:  # noqa: N802 - stdlib handler API
+        self._serve_owner_api("DELETE")
+
+    def _serve_member_asset(self, request_path: str) -> None:
+        asset = self.server.scan_state.member_asset(request_path)
+        if asset is None:
+            self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+            return
+        payload, content_type = asset
+        self._send_bytes(payload, content_type)
+
+    def _is_loopback_client(self) -> bool:
+        try:
+            return ipaddress.ip_address(self.client_address[0]).is_loopback
+        except ValueError:
+            return False
+
+    def _owner_request_source_allowed(self, method: str) -> bool:
+        port = self.server.server_address[1]
+        expected_host = f"127.0.0.1:{port}"
+        expected_origin = f"http://{expected_host}"
+
+        host_values = self.headers.get_all("Host") or []
+        if host_values != [expected_host]:
+            return False
+
+        origin_values = self.headers.get_all("Origin") or []
+        fetch_site_values = self.headers.get_all("Sec-Fetch-Site") or []
+        if method == "GET":
+            valid_origin = len(origin_values) <= 1 and (
+                not origin_values or origin_values[0] == expected_origin
+            )
+            valid_fetch_site = len(fetch_site_values) <= 1 and (
+                not fetch_site_values
+                or fetch_site_values[0] in {"same-origin", "none"}
+            )
+            return valid_origin and valid_fetch_site
+
+        if origin_values != [expected_origin]:
+            return False
+        return len(fetch_site_values) <= 1 and (
+            not fetch_site_values or fetch_site_values[0] == "same-origin"
+        )
+
+    def _serve_owner_api(self, method: str) -> None:
+        proxy = self.server.scan_state.owner_proxy
+        if proxy is None or not self.path.startswith("/api/"):
+            self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+            return
+        if not self._is_loopback_client():
+            self._send_json_error(HTTPStatus.FORBIDDEN, "只允许本机页面访问主管理员接口")
+            return
+        if not self._owner_request_source_allowed(method):
+            self._send_json_error(HTTPStatus.FORBIDDEN, "只允许固定本机入口访问主管理员接口")
+            return
+        try:
+            content_length = int(self.headers.get("Content-Length", "0") or "0")
+        except ValueError:
+            self._send_json_error(HTTPStatus.BAD_REQUEST, "请求长度无效")
+            return
+        if content_length < 0 or content_length > MAX_OWNER_REQUEST_BYTES:
+            self._send_json_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "请求内容过大")
+            return
+        body = self.rfile.read(content_length) if content_length else None
+        try:
+            response = proxy.request(
+                method,
+                self.path,
+                body=body,
+                content_type=self.headers.get("Content-Type"),
+            )
+        except (LocalOwnerError, ValueError) as exc:
+            print(
+                f"[web] 本机主管理员接口失败: {type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            self._send_json_error(HTTPStatus.BAD_GATEWAY, str(exc))
+            return
+        headers = {}
+        if response.content_disposition:
+            headers["Content-Disposition"] = response.content_disposition
+        self._send_bytes(
+            response.body,
+            response.content_type,
+            status=response.status,
+            headers=headers,
+        )
+
+    def _send_json_error(self, status: HTTPStatus, message: str) -> None:
+        payload = json.dumps(
+            {"error": message}, ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
+        self._send_bytes(
+            payload,
+            "application/json; charset=utf-8",
+            status=status,
+        )
 
     def _serve_report(self, *, scan: bool, force: bool) -> None:
         try:
@@ -411,12 +581,26 @@ class RefreshingReportHandler(BaseHTTPRequestHandler):
         payload: bytes,
         content_type: str,
         *,
-        status: HTTPStatus = HTTPStatus.OK,
+        status: HTTPStatus | int = HTTPStatus.OK,
+        headers: dict[str, str] | None = None,
     ) -> None:
+        if not isinstance(content_type, str) or any(
+            ord(character) < 32 or ord(character) == 127
+            for character in content_type
+        ):
+            content_type = "application/octet-stream"
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        for name, value in (headers or {}).items():
+            if not isinstance(value, str) or any(
+                ord(character) < 32 or ord(character) == 127
+                for character in value
+            ):
+                continue
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(payload)
 
@@ -437,6 +621,25 @@ def serve(
     use_concepts: bool = True,
     use_fund_flow: bool = True,
 ) -> None:
+    config_root = Path(config_path).resolve().parent
+    site_dir = config_root / "site"
+    owner_proxy: LocalOwnerProxy | None = None
+    fixed_local_host = host == "127.0.0.1"
+    member_assets_ready = all(
+        (site_dir / name).is_file() for name in ("member.css", "member.js")
+    )
+    owner_vars_path = _default_owner_vars_path()
+    if fixed_local_host and member_assets_ready and owner_vars_path is not None:
+        try:
+            owner_proxy = LocalOwnerProxy(owner_vars_path)
+        except OwnerConfigurationError as exc:
+            print(f"本机主管理员自动登录未启用: {exc}", flush=True)
+    elif not fixed_local_host:
+        print("本机主管理员自动登录未启用: 服务未绑定固定入口 127.0.0.1", flush=True)
+    elif not member_assets_ready:
+        print("本机主管理员自动登录未启用: 成员前端文件缺失", flush=True)
+    else:
+        print("本机主管理员自动登录未启用: LOCALAPPDATA 不可用", flush=True)
     state = ScanState(
         config_path=Path(config_path).resolve(),
         output_dir=Path(output_dir).resolve(),
@@ -446,6 +649,8 @@ def serve(
         auto_refresh_seconds=auto_refresh_seconds,
         use_concepts=use_concepts,
         use_fund_flow=use_fund_flow,
+        site_dir=site_dir,
+        owner_proxy=owner_proxy,
     )
     server = RefreshingReportServer((host, port), state)
     print(f"选股器已启动: http://{host}:{port}/", flush=True)
@@ -460,6 +665,8 @@ def serve(
         )
     else:
         print("本地自动刷新已关闭。", flush=True)
+    if owner_proxy is not None:
+        print("本机主管理员自动登录已启用。", flush=True)
     state.start_auto_refresh()
     try:
         server.serve_forever()
@@ -467,4 +674,6 @@ def serve(
         print("\n选股器服务已停止。", flush=True)
     finally:
         state.stop_auto_refresh()
+        if owner_proxy is not None:
+            owner_proxy.close()
         server.server_close()

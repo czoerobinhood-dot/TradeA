@@ -626,6 +626,13 @@ def render_html(
         "red_line_on_top": "红线在上",
         "red_line_recent_cross": "红线上穿",
     }
+    gap_condition_keys = (
+        "recent_gap_up",
+        "gap_close_unfilled",
+        "gap_sideways_holding",
+        "gap_uptrend",
+        "gap_sustained_volume",
+    )
     for rank, candidate in enumerate(candidates, start=1):
         record = candidate_record(candidate)
         decision = str(record["decision"])
@@ -662,15 +669,34 @@ def render_html(
             f'data-favorite-name="{html.escape(record["name"], quote=True)}" aria-pressed="false" '
             f'aria-label="收藏 {html.escape(record["name"], quote=True)}" title="收藏">☆</button>'
         )
-        detail_anchor = detail_anchor_by_code.get(record["code"])
-        local_detail_link = (
-            f'<a href="#{detail_anchor}" title="查看本页K线和筛选明细">本页K线</a>'
-            if detail_anchor
-            else ""
+        general_detail_anchor = (
+            f'stock-{record["code"]}'
+            if record["code"] in general_detail_codes
+            else None
+        )
+        gap_detail_anchor = (
+            f'gap-stock-{record["code"]}'
+            if record["code"] in gap_detail_codes
+            else None
+        )
+        local_detail_links = "".join(
+            (
+                (
+                    f'<a href="#{general_detail_anchor}" title="查看通用逐股复核">通用复核</a>'
+                    if general_detail_anchor
+                    else ""
+                ),
+                (
+                    f'<a class="gap-detail-link" href="#{gap_detail_anchor}" '
+                    'title="查看缺口趋势专属详解">缺口详解</a>'
+                    if gap_detail_anchor
+                    else ""
+                ),
+            )
         )
         action_links = (
             '<div class="stock-actions">'
-            f'{local_detail_link}'
+            f'{local_detail_links}'
             f'<a href="{html.escape(record["sohu_url"], quote=True)}" target="_blank" rel="noopener noreferrer" title="打开搜狐日/周/月K线、盘口和公司资料">搜狐K线</a>'
             f'<a href="{html.escape(record["eastmoney_url"], quote=True)}" target="_blank" rel="noopener noreferrer" title="打开东方财富K线、资金、F10和公告">东财K线/F10</a>'
             f'<button type="button" class="copy-code-button" data-copy-code="{record["code"]}" title="复制后在华泰客户端输入代码">复制代码</button>'
@@ -828,6 +854,36 @@ def render_html(
         risk_items = "".join(
             f"<li>{html.escape(item)}</li>" for item in record["risks"][:12]
         ) or "<li>未识别到规则内的额外风险项</li>"
+        gap_conditions = record["gap_conditions"] or {}
+        gap_condition_items = "".join(
+            f'<span class="condition {"pass" if gap_conditions.get(key) else "fail"}">'
+            f'{"✓" if gap_conditions.get(key) else "×"} '
+            f'{html.escape(condition_labels[key])}</span>'
+            for key in gap_condition_keys
+        )
+        gap_match = bool(record["gap_setup_match"])
+        gap_focus = (
+            '<div class="gap-focus">'
+            '<div class="gap-focus-head"><strong>缺口趋势专属复核</strong>'
+            f'<span class="state {"positive" if gap_match else "watch"}">'
+            f'{"完整匹配" if gap_match else "接近形态"}</span></div>'
+            '<div class="gap-metrics">'
+            f'<span>缺口日期 <b>{html.escape(str(record["gap_date"] or "-"))}</b></span>'
+            f'<span>缺口价格区间 <b>{_fmt(record["gap_floor"], 2)} - {_fmt(record["gap_ceiling"], 2)}</b></span>'
+            f'<span>缺口幅度 <b>{_fmt((_finite(record["gap_size_pct"]) or 0) * 100, 1, "%")}</b></span>'
+            f'<span>形成后交易日 <b>{record["gap_bars_since"] or 0}</b></span>'
+            f'<span>收盘回补 <b>{"未回补" if record["gap_close_unfilled"] else "已回补"}</b></span>'
+            f'<span>盘中回补 <b>{"未进入缺口" if record["gap_intraday_unfilled"] else "曾进入缺口"}</b></span>'
+            f'<span>横盘确认 <b>{"已确认" if record["gap_hold_confirmed"] else "等待确认"}</b></span>'
+            f'<span>平台收盘振幅 <b>{_fmt((_finite(record["gap_close_range"]) or 0) * 100, 1, "%")}</b></span>'
+            f'<span>缺口后量能 <b>{_fmt(record["gap_post_volume_ratio"], 2)}x</b></span>'
+            f'<span>活跃放量占比 <b>{_fmt((_finite(record["gap_post_volume_active_fraction"]) or 0) * 100, 0, "%")}</b></span>'
+            f'<span>缺口条件 <b>{record["gap_condition_count"] or 0}/{record["gap_condition_total"] or 0}</b></span>'
+            f'<span>缺口优选分 <b>{_fmt(record["gap_preference_score"], 1)}</b></span>'
+            '</div>'
+            f'<div class="conditions gap-conditions">{gap_condition_items}</div>'
+            '</div>'
+        )
         fund_chart = fund_svg(candidate.fund_flow) if candidate.fund_flow is not None else ""
         snapshot_chart = (
             fund_snapshot_svg(candidate.fund_snapshot)
@@ -862,6 +918,7 @@ def render_html(
             f'<h3>{rank}. {html.escape(candidate.name)} <span>{candidate.code}</span></h3>'
             f'<p>{html.escape(str(record["decision_reason"]))}</p>{action_links}</div></div>'
             f'<div class="score">{_fmt(record["final_score"], 1)}<small>综合分</small></div></div>'
+            '__DETAIL_EXTRA__'
             f'<div class="metrics"><span>阶段 <b>{html.escape(str(record["stage"]))}</b></span>'
             f'<span>当前状态 <b>{"已涨停" if record["limit_up_today"] else "未涨停"}</b></span>'
             f'<span>当前价/涨幅 {_fmt(record["close"], 2)} / {_signed_pct(record["current_change_pct"])}</span>'
@@ -912,12 +969,50 @@ def render_html(
         )
         if candidate.code in general_detail_codes:
             details.append(
-                detail_card.replace("__DETAIL_ID__", f"stock-{candidate.code}")
+                detail_card.replace("__DETAIL_ID__", f"stock-{candidate.code}").replace(
+                    "__DETAIL_EXTRA__", ""
+                )
             )
         if candidate.code in gap_detail_codes:
             gap_details.append(
-                detail_card.replace("__DETAIL_ID__", f"gap-stock-{candidate.code}")
+                detail_card.replace('class="candidate"', 'class="candidate gap-candidate"', 1)
+                .replace("__DETAIL_ID__", f"gap-stock-{candidate.code}")
+                .replace("__DETAIL_EXTRA__", gap_focus)
             )
+
+    gap_index_items = []
+    for record in gap_setup_candidates:
+        gap_anchor = (
+            f'#gap-stock-{record["code"]}'
+            if record["code"] in gap_detail_codes
+            else record["sohu_url"]
+        )
+        external_attributes = (
+            ''
+            if record["code"] in gap_detail_codes
+            else ' target="_blank" rel="noopener noreferrer"'
+        )
+        gap_index_items.append(
+            f'<a class="gap-index-item" href="{html.escape(gap_anchor, quote=True)}"{external_attributes}>'
+            f'<strong>{html.escape(record["name"])} <span>{record["code"]}</span></strong>'
+            f'<small>{"完整匹配" if record["gap_setup_match"] else "接近形态"} · '
+            f'{html.escape(str(record["gap_date"] or "日期待定"))} · '
+            f'{_fmt((_finite(record["gap_size_pct"]) or 0) * 100, 1, "%")} · '
+            f'{record["gap_condition_count"] or 0}/{record["gap_condition_total"] or 0}项 · '
+            f'后量 {_fmt(record["gap_post_volume_ratio"], 2)}x</small></a>'
+        )
+    gap_index = (
+        '<div class="gap-index" id="gap-stock-list">'
+        + "".join(gap_index_items)
+        + "</div>"
+        if gap_index_items
+        else ""
+    )
+    gap_review_count_text = (
+        f"{gap_detail_count} 只"
+        if gap_detail_count == len(gap_setup_candidates)
+        else f"展示 {gap_detail_count}/{len(gap_setup_candidates)} 只"
+    )
 
     issue_rows = "".join(
         f"<tr><td>{html.escape(issue.scope)}</td><td>{html.escape(issue.code or '-')}</td><td>{html.escape(issue.message)}</td></tr>"
@@ -1025,6 +1120,8 @@ def render_html(
   const favoriteButtons = rows.flatMap((row) => Array.from(row.querySelectorAll("[data-favorite-code]"))).concat(detailFavoriteButtons);
   const copyCodeButtons = rows.flatMap((row) => Array.from(row.querySelectorAll("[data-copy-code]"))).concat(detailCopyCodeButtons);
   const favoriteFilterButton = document.querySelector('[data-table-filter="favorites"]');
+  const gapReview = document.getElementById("gap-review");
+  const gapReviewHint = gapReview?.querySelector(".gap-review-hint");
   const visibleCount = document.getElementById("visible-count");
   const emptyState = document.getElementById("table-empty");
   const previousPageButton = document.getElementById("previous-page");
@@ -1036,6 +1133,18 @@ def render_html(
   let activeFilter = "all";
   let sortState = { column: 0, direction: "asc", type: "number" };
   let currentPage = 1;
+
+  const showGapReview = () => {
+    if (!gapReview) return;
+    gapReview.open = true;
+    if (gapReviewHint) gapReviewHint.textContent = "已展开";
+  };
+
+  gapReview?.addEventListener("toggle", () => {
+    if (gapReviewHint) {
+      gapReviewHint.textContent = gapReview.open ? "已展开" : "点击展开";
+    }
+  });
 
   const scrollToStockWithoutHash = (hash, behavior = "smooth") => {
     if (!/^#(?:gap-)?stock-\\d{6}$/.test(hash || "")) return false;
@@ -1192,6 +1301,7 @@ def render_html(
       });
       currentPage = 1;
       render();
+      if (activeFilter === "gap-setup") showGapReview();
     });
   });
 
@@ -1338,12 +1448,23 @@ tbody tr:hover {{ background:#fafbfc; }}
 .state.watch {{ color:#fff; background:var(--blue); }}
 .state.danger {{ color:#fff; background:var(--amber); }}
 .state.muted {{ color:#4d5661; background:#e9edf1; }}
-.gap-review {{ margin:30px 0 10px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }}
-.gap-review > summary {{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 2px; color:var(--ink); cursor:pointer; }}
+.gap-review {{ margin:24px 0 30px; border:1px solid #c9d8e8; border-radius:6px; background:#f7fafc; scroll-margin-top:16px; }}
+.gap-review > summary {{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px; color:var(--ink); cursor:pointer; }}
 .gap-review-title {{ font-size:20px; font-weight:700; }}
 .gap-review-hint {{ color:var(--blue); font-size:13px; white-space:nowrap; }}
 .gap-review[open] > summary {{ border-bottom:1px solid var(--line); }}
-.gap-review-body {{ padding-top:4px; }}
+.gap-review-body {{ padding:4px 16px 18px; }}
+.gap-index {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin:14px 0 22px; }}
+.gap-index-item {{ display:grid; gap:3px; padding:10px 12px; border:1px solid #d8e1eb; border-radius:4px; color:var(--ink); background:#fff; text-decoration:none; }}
+.gap-index-item:hover {{ border-color:var(--blue); background:#f2f6fb; }}
+.gap-index-item strong span {{ color:var(--muted); font-size:12px; }}
+.gap-index-item small {{ color:var(--muted); line-height:1.5; }}
+.gap-candidate {{ border-color:#c9d8e8; background:#fff; }}
+.gap-focus {{ margin:12px 0 14px; padding:12px 14px; border-left:4px solid var(--blue); background:#f2f6fb; }}
+.gap-focus-head {{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }}
+.gap-metrics {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px 14px; color:var(--muted); font-size:12px; }}
+.gap-metrics b {{ color:var(--ink); }}
+.gap-conditions {{ margin-top:10px; }}
 .candidate {{ padding:24px 0 30px; border-bottom:1px solid var(--line); }}
 .candidate-head {{ display:flex; justify-content:space-between; gap:20px; align-items:flex-start; }}
 .candidate-head p {{ color:var(--muted); }}
@@ -1362,7 +1483,7 @@ tbody tr:hover {{ background:#fafbfc; }}
 ul {{ margin:6px 0 0; padding-left:20px; line-height:1.7; }}
 .issues td {{ font-size:12px; }}
 footer {{ color:var(--muted); border-top:1px solid var(--line); padding:16px 0; margin-top:30px; line-height:1.7; }}
-@media (max-width:720px) {{ header {{ padding:18px 16px 13px; }} main {{ padding:0 12px 28px; }} .status-groups,.notes {{ grid-template-columns:1fr; gap:4px; }} .status-group + .status-group {{ border-top:1px solid var(--line); }} .table-toolbar {{ align-items:flex-start; flex-direction:column; }} .table-status {{ justify-content:space-between; min-width:0; width:100%; }} .segmented {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; gap:1px; background:#bfc7d1; }} .segmented button,.segmented button:nth-last-child(-n+2) {{ grid-column:span 1; min-width:0; min-height:46px; padding:6px 7px; border:0; }} .candidate-head {{ align-items:center; }} }}
+@media (max-width:720px) {{ header {{ padding:18px 16px 13px; }} main {{ padding:0 12px 28px; }} .status-groups,.notes,.gap-index,.gap-metrics {{ grid-template-columns:1fr; gap:4px; }} .status-group + .status-group {{ border-top:1px solid var(--line); }} .table-toolbar {{ align-items:flex-start; flex-direction:column; }} .table-status {{ justify-content:space-between; min-width:0; width:100%; }} .segmented {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; gap:1px; background:#bfc7d1; }} .segmented button,.segmented button:nth-last-child(-n+2) {{ grid-column:span 1; min-width:0; min-height:46px; padding:6px 7px; border:0; }} .candidate-head {{ align-items:center; }} }}
 </style>
 </head>
 <body>
@@ -1382,7 +1503,7 @@ footer {{ color:var(--muted); border-top:1px solid var(--line); padding:16px 0; 
     <button type="button" data-table-filter="favorites" aria-pressed="false">收藏 0</button>
     <button type="button" data-table-filter="not-limit" aria-pressed="false">日K低位红量 {len(not_limit_candidates)}</button>
     <button type="button" data-table-filter="right-volume" aria-pressed="false">右侧放量 {len(right_volume_candidates)}</button>
-    <button type="button" data-table-filter="gap-setup" aria-pressed="false">缺口趋势 {len(gap_setup_candidates)}</button>
+    <button type="button" data-table-filter="gap-setup" data-gap-review-target="gap-review" aria-controls="candidate-table gap-review" aria-pressed="false">缺口趋势 {len(gap_setup_candidates)}</button>
     <button type="button" data-table-filter="limit-up" aria-pressed="false">已涨停形态 {len(limit_up_candidates)}</button>
   </div><div class="table-status"><span id="visible-count" class="subtle"></span><div class="pagination" aria-label="候选分页">
     <button type="button" id="previous-page" aria-label="上一页" title="上一页">‹</button>
@@ -1394,16 +1515,17 @@ footer {{ color:var(--muted); border-top:1px solid var(--line); padding:16px 0; 
   <template id="candidate-row-template">{''.join(table_rows)}</template>
   <p id="table-empty" class="subtle" hidden>该分组本轮没有候选。</p>
   <p class="subtle">参考模板：{html.escape(template_text)}</p>
-  <h2>逐股复核（前 {detail_count} 只）</h2>
-  <p class="subtle">默认展示综合排序靠前股票的日K图、板块热度、资金博弈代理、条件证据和风险。</p>
-  {''.join(details) or '<p class="subtle">本轮没有可展示的逐股复核候选。</p>'}
   <details class="gap-review" id="gap-review">
-    <summary><span class="gap-review-title">缺口趋势复核（前 {gap_detail_count} 只）</span><span class="gap-review-hint">点击展开</span></summary>
+    <summary><span class="gap-review-title">缺口趋势详细复核（{gap_review_count_text}）</span><span class="gap-review-hint">点击展开</span></summary>
     <div class="gap-review-body">
-      <p class="subtle">这是额外的缺口趋势板块；展开后逐只查看缺口候选的完整日K图、板块热度、资金博弈代理、条件证据和风险。</p>
+      <p class="subtle">这是独立于通用逐股复核的缺口趋势板块。点击上方“缺口趋势”会自动展开；先从下列股票索引进入专属详解，再核对缺口区间、回补、横盘、趋势、量能、完整日K图和风险。</p>
+      {gap_index or '<p class="subtle">本轮没有达到缺口趋势复核门槛的候选。</p>'}
       {''.join(gap_details) or '<p class="subtle">本轮没有达到缺口趋势复核门槛的候选。</p>'}
     </div>
   </details>
+  <h2>通用逐股复核（前 {detail_count} 只）</h2>
+  <p class="subtle">按综合排序展示通用日K图、板块热度、资金博弈代理、条件证据和风险；该区域与上面的缺口趋势专属复核彼此独立。</p>
+  {''.join(details) or '<p class="subtle">本轮没有可展示的通用逐股复核候选。</p>'}
   <h2>数据问题</h2>
   <div class="table-wrap"><table class="issues"><thead><tr><th>环节</th><th>代码</th><th>信息</th></tr></thead><tbody>{issue_rows}</tbody></table></div>
   <footer>{html.escape(scope_footer)} 排序只比较进入日线精筛的股票，并会随行情变化。第三方接口字段或访问限制变化时，报告会显示失败项；数据不足的股票不会被静默当作低分股票处理。</footer>

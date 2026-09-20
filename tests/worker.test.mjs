@@ -353,3 +353,13 @@ test("member UI includes admin-only favorite ownership details", () => {
   assert.match(script, /收藏人/);
   assert.match(styles, /\.member-favorite-stock-list/);
 });
+
+test("member UI identifies the trusted local owner runtime", () => {
+  const script = readFileSync(new URL("../site/member.js", import.meta.url), "utf8");
+
+  assert.match(script, /Boolean\(window\.__TRADEA_LOCAL_OWNER__\)/);
+  assert.match(script, /主管理员连接中/);
+  assert.match(script, /主管理员 · 本机自动登录/);
+  assert.match(script, /logoutButton\.hidden = LOCAL_OWNER_MODE/);
+  assert.match(script, /if \(LOCAL_OWNER_MODE\) return;/);
+});

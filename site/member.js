@@ -4,6 +4,7 @@
   const FAVORITE_KEY = "ashare-screener:favorites:v1";
   const LOCAL_BACKUP_KEY = "tradea:local-favorites-backup:v1";
   const CLOUD_MODE_KEY = "tradea:cloud-favorites-user:v1";
+  const LOCAL_OWNER_MODE = Boolean(window.__TRADEA_LOCAL_OWNER__);
   const state = {
     user: null,
     setupRequired: false,
@@ -90,7 +91,10 @@
       for (const child of Array.from(headerRow.children).slice(1)) {
         actions.appendChild(child);
       }
-      const accountButton = createButton("成员登录", "member-account-button");
+      const accountButton = createButton(
+        LOCAL_OWNER_MODE ? "主管理员连接中" : "成员登录",
+        "member-account-button",
+      );
       accountButton.id = "member-account-button";
       accountButton.addEventListener("click", openMemberCenter);
       actions.appendChild(accountButton);
@@ -276,6 +280,8 @@
     const loginForm = $("#member-login-form");
     const sessionView = $("#member-session-view");
     const accountButton = $("#member-account-button");
+    const logoutButton = $("#member-logout");
+    logoutButton.hidden = LOCAL_OWNER_MODE;
     const favoriteFilterButton = $('[data-table-filter="favorites"]');
     if (favoriteFilterButton) {
       favoriteFilterButton.title = state.user
@@ -291,8 +297,12 @@
     loginForm.hidden = !state.serviceAvailable || state.setupRequired || Boolean(state.user);
 
     if (!state.serviceAvailable) {
-      accountButton.textContent = "成员未连接";
-      setMessage($("#member-dialog-message"), "成员服务尚未连接", "error");
+      accountButton.textContent = LOCAL_OWNER_MODE ? "主管理员连接失败" : "成员未连接";
+      setMessage(
+        $("#member-dialog-message"),
+        LOCAL_OWNER_MODE ? "本机主管理员服务尚未连接" : "成员服务尚未连接",
+        "error",
+      );
       return;
     }
     if (!state.user) {
@@ -307,7 +317,9 @@
     }
     accountButton.textContent = state.user.displayName;
     $("#member-display-name").textContent = state.user.displayName;
-    $("#member-role").textContent = state.user.role === "admin" ? "管理员" : "成员";
+    $("#member-role").textContent = state.user.role === "admin"
+      ? (LOCAL_OWNER_MODE ? "主管理员 · 本机自动登录" : "管理员")
+      : "成员";
     const isAdmin = state.user.role === "admin";
     $("#member-admin-favorites-section").hidden = !isAdmin;
     $("#member-admin-section").hidden = !isAdmin;
@@ -619,6 +631,7 @@
   }
 
   async function logout() {
+    if (LOCAL_OWNER_MODE) return;
     try {
       await api("/api/auth/logout", { method: "POST", body: "{}" });
     } catch {

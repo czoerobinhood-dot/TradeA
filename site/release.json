@@ -4,13 +4,13 @@
   "mode": "cloudflare-pages-read-only",
   "report": {
     "source_file": "latest.html",
-    "generated_at": "2026-09-20 14:52:04",
-    "sha256": "14a92bedffe59343fc523a5d5817d031e199db13ab6aeb2c9c2fd81cb67db200",
-    "bytes": 2656339
+    "generated_at": "2026-09-20 15:28:32",
+    "sha256": "235884ab0c49d1dacff3aa4f50b07f623ed0699743ed8ffbed48068444741fa9",
+    "bytes": 2677491
   },
   "site": {
-    "index_sha256": "d6677b893cbc72593234f0965d6616148531fd023d28f96ab0b01e6176db8cc3",
-    "index_bytes": 2656428,
+    "index_sha256": "e11430b7f7b1894c86f049907c5867a11702bd6026b4ff69ce21b393456be7b0",
+    "index_bytes": 2677580,
     "scan_trigger": false,
     "member_collaboration": true
   }

@@ -1,13 +1,18 @@
 from pathlib import Path
 from types import SimpleNamespace
+from http.client import HTTPConnection
 import threading
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import pytest
 
 import ashare_screener.server as server_module
 from ashare_screener.cli import build_parser
+from ashare_screener.local_owner import LocalOwnerResponse
 from ashare_screener.server import (
+    LOCAL_OWNER_CONFIG,
+    LOCAL_OWNER_SCRIPT,
+    LOCAL_OWNER_STYLESHEET,
     LIVE_SUBTITLE,
     RefreshingReportServer,
     ScanState,
@@ -36,6 +41,28 @@ def make_state(tmp_path: Path, *, auto_refresh_seconds: int = 0) -> ScanState:
     )
 
 
+def raw_http_request(
+    host: str,
+    port: int,
+    method: str,
+    path: str,
+    headers: list[tuple[str, str]],
+    body: bytes | None = None,
+):
+    connection = HTTPConnection(host, port, timeout=2)
+    try:
+        connection.putrequest(method, path, skip_host=True)
+        for name, value in headers:
+            connection.putheader(name, value)
+        if body is not None:
+            connection.putheader("Content-Length", str(len(body)))
+        connection.endheaders(body)
+        response = connection.getresponse()
+        return response.status, response.headers, response.read()
+    finally:
+        connection.close()
+
+
 def test_live_mode_injection_defaults_to_manual_refresh():
     page = inject_live_mode(
         REPORT_PAGE,
@@ -52,10 +79,50 @@ def test_live_mode_injection_defaults_to_manual_refresh():
     assert 'const initialRevision = "123:456"' in page
 
 
+def test_live_mode_injects_local_owner_runtime_only_when_enabled():
+    plain = inject_live_mode(
+        REPORT_PAGE,
+        report_revision="123:456",
+        auto_refresh_seconds=0,
+    )
+    owner = inject_live_mode(
+        REPORT_PAGE,
+        report_revision="123:456",
+        auto_refresh_seconds=0,
+        local_owner_enabled=True,
+    )
+
+    assert LOCAL_OWNER_STYLESHEET not in plain
+    assert LOCAL_OWNER_CONFIG not in plain
+    assert LOCAL_OWNER_SCRIPT not in plain
+    assert owner.count(LOCAL_OWNER_STYLESHEET) == 1
+    assert owner.count(LOCAL_OWNER_CONFIG) == 1
+    assert owner.count(LOCAL_OWNER_SCRIPT) == 1
+    assert owner.index(LOCAL_OWNER_CONFIG) < owner.index(LOCAL_OWNER_SCRIPT)
+
+
 def test_serve_defaults_to_manual_refresh():
     args = build_parser().parse_args(["serve"])
 
     assert args.refresh_interval == 0
+
+
+def test_default_owner_vars_path_uses_local_appdata_without_project_fallback(
+    tmp_path, monkeypatch
+):
+    local_appdata = tmp_path / "LocalAppData"
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / ".owner.vars").write_text("must not be used", encoding="utf-8")
+    monkeypatch.chdir(project_root)
+
+    monkeypatch.setenv("LOCALAPPDATA", str(local_appdata))
+    assert server_module._default_owner_vars_path() == (
+        local_appdata / "TradeA" / "owner.vars"
+    )
+
+    monkeypatch.delenv("LOCALAPPDATA")
+    assert server_module._default_owner_vars_path() is None
 
 
 def test_scan_state_refreshes_realtime_cache_without_forcing_slow_data(
@@ -222,12 +289,209 @@ def test_root_serves_existing_report_without_starting_scan(tmp_path):
         host, port = httpd.server_address
         with urlopen(f"http://{host}:{port}/", timeout=2) as response:
             body = response.read()
+            response_headers = response.headers
     finally:
         httpd.shutdown()
         httpd.server_close()
         thread.join(timeout=2)
 
     assert body == b"existing report"
+    assert response_headers["X-Frame-Options"] == "DENY"
+    assert response_headers["Content-Security-Policy"] == "frame-ancestors 'none'"
+
+
+def test_local_owner_runtime_serves_assets_and_proxies_api(tmp_path):
+    site_dir = tmp_path / "site"
+    site_dir.mkdir()
+    (site_dir / "member.css").write_text(".member{}", encoding="utf-8")
+    (site_dir / "member.js").write_text("window.memberReady=true;", encoding="utf-8")
+
+    class FakeOwnerProxy:
+        connected = True
+
+        def __init__(self):
+            self.calls = []
+
+        def request(self, method, path, body=None, content_type=None):
+            self.calls.append((method, path, body, content_type))
+            return LocalOwnerResponse(
+                status=200,
+                body=b'{"user":{"role":"admin"}}',
+                content_type="application/json; charset=utf-8",
+            )
+
+    proxy = FakeOwnerProxy()
+    state = make_state(tmp_path)
+    state.site_dir = site_dir
+    state.owner_proxy = proxy
+    state.report_path.parent.mkdir(parents=True)
+    state.report_path.write_text(REPORT_PAGE, encoding="utf-8")
+    httpd = RefreshingReportServer(("127.0.0.1", 0), state)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = httpd.server_address
+        with urlopen(f"http://{host}:{port}/", timeout=2) as response:
+            page = response.read().decode("utf-8")
+        with urlopen(f"http://{host}:{port}/member.js", timeout=2) as response:
+            member_script = response.read()
+        request_body = '{"code":"000001","name":"平安银行"}'.encode("utf-8")
+        request = Request(
+            f"http://{host}:{port}/api/favorites",
+            data=request_body,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "Origin": f"http://{host}:{port}",
+                "Sec-Fetch-Site": "same-origin",
+            },
+        )
+        with urlopen(request, timeout=2) as response:
+            api_payload = response.read()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=2)
+
+    assert LOCAL_OWNER_STYLESHEET in page
+    assert LOCAL_OWNER_CONFIG in page
+    assert LOCAL_OWNER_SCRIPT in page
+    assert member_script == b"window.memberReady=true;"
+    assert api_payload == b'{"user":{"role":"admin"}}'
+    assert proxy.calls == [
+        (
+            "POST",
+            "/api/favorites",
+            request_body,
+            "application/json",
+        )
+    ]
+
+
+def test_local_owner_api_rejects_missing_wrong_or_cross_site_mutation_origin(
+    tmp_path,
+):
+    class FakeOwnerProxy:
+        connected = False
+
+        def request(self, *args, **kwargs):
+            raise AssertionError("foreign origin must not reach the owner proxy")
+
+    state = make_state(tmp_path)
+    state.owner_proxy = FakeOwnerProxy()
+    httpd = RefreshingReportServer(("127.0.0.1", 0), state)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = httpd.server_address
+        expected_host = f"127.0.0.1:{port}"
+        rejected_headers = [
+            [("Host", expected_host), ("Content-Type", "application/json")],
+            [
+                ("Host", expected_host),
+                ("Content-Type", "application/json"),
+                ("Origin", "https://evil.test"),
+            ],
+            [
+                ("Host", expected_host),
+                ("Content-Type", "application/json"),
+                ("Origin", f"http://localhost:{port}"),
+            ],
+            [
+                ("Host", expected_host),
+                ("Content-Type", "application/json"),
+                ("Origin", f"http://127.0.0.1:{port}"),
+                ("Sec-Fetch-Site", "cross-site"),
+            ],
+        ]
+        for headers in rejected_headers:
+            status, _, _ = raw_http_request(
+                host, port, "POST", "/api/favorites", headers, b"{}"
+            )
+            assert status == 403
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=2)
+
+
+def test_local_owner_api_rejects_missing_duplicate_or_hostile_host_and_get_origin(
+    tmp_path,
+):
+    class FakeOwnerProxy:
+        connected = False
+
+        def __init__(self):
+            self.calls = []
+
+        def request(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+            return LocalOwnerResponse(
+                status=200,
+                body=b'{"members":[]}',
+                content_type="application/json; charset=utf-8",
+            )
+
+    state = make_state(tmp_path)
+    proxy = FakeOwnerProxy()
+    state.owner_proxy = proxy
+    httpd = RefreshingReportServer(("127.0.0.1", 0), state)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = httpd.server_address
+        expected_host = f"127.0.0.1:{port}"
+        rejected_headers = [
+            [],
+            [("Host", "attacker.test")],
+            [("Host", expected_host), ("Host", "attacker.test")],
+            [("Host", f"localhost:{port}")],
+            [("Host", expected_host), ("Origin", "https://attacker.test")],
+            [
+                ("Host", expected_host),
+                ("Origin", f"http://127.0.0.1:{port}"),
+                ("Origin", "https://attacker.test"),
+            ],
+            [("Host", expected_host), ("Sec-Fetch-Site", "cross-site")],
+            [("Host", expected_host), ("Sec-Fetch-Site", "same-site")],
+            [
+                ("Host", expected_host),
+                ("Sec-Fetch-Site", "same-origin"),
+                ("Sec-Fetch-Site", "none"),
+            ],
+        ]
+        for headers in rejected_headers:
+            status, response_headers, _ = raw_http_request(
+                host, port, "GET", "/api/members", headers
+            )
+            assert status == 403
+            assert response_headers["X-Frame-Options"] == "DENY"
+            assert (
+                response_headers["Content-Security-Policy"]
+                == "frame-ancestors 'none'"
+            )
+        assert proxy.calls == []
+
+        valid_headers = [
+            [("Host", expected_host)],
+            [
+                ("Host", expected_host),
+                ("Origin", f"http://127.0.0.1:{port}"),
+            ],
+            [("Host", expected_host), ("Sec-Fetch-Site", "same-origin")],
+            [("Host", expected_host), ("Sec-Fetch-Site", "none")],
+        ]
+        for headers in valid_headers:
+            status, _, body = raw_http_request(
+                host, port, "GET", "/api/members", headers
+            )
+            assert status == 200
+            assert body == b'{"members":[]}'
+        assert len(proxy.calls) == 4
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=2)
 
 
 def test_local_server_rejects_a_second_listener_on_the_same_port():

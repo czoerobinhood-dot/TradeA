@@ -93,12 +93,17 @@ def make_candidate(code: str, name: str, *, limit_up: bool) -> Candidate:
             "rise_pressure": 1.8 if limit_up else 0.67,
             "volume_as_of": "2026-09-17",
             "gap_date": "2026-09-10" if not limit_up else None,
+            "gap_floor": 10.20 if not limit_up else None,
+            "gap_ceiling": 10.50 if not limit_up else None,
             "gap_size_pct": 0.02 if not limit_up else None,
             "gap_bars_since": 5 if not limit_up else 0,
             "gap_close_unfilled": not limit_up,
             "gap_intraday_unfilled": not limit_up,
+            "gap_hold_confirmed": not limit_up,
             "gap_close_range": 0.10 if not limit_up else None,
             "gap_post_volume_ratio": 1.8 if not limit_up else None,
+            "gap_post_volume_active_fraction": 0.75 if not limit_up else None,
+            "gap_preference_score": 15.0 if not limit_up else 0.0,
             "gap_setup_match": not limit_up,
             "gap_setup_near": not limit_up,
             "gap_condition_count": 5 if not limit_up else 0,
@@ -106,6 +111,9 @@ def make_candidate(code: str, name: str, *, limit_up: bool) -> Candidate:
             "gap_conditions": {
                 "recent_gap_up": not limit_up,
                 "gap_close_unfilled": not limit_up,
+                "gap_sideways_holding": not limit_up,
+                "gap_uptrend": not limit_up,
+                "gap_sustained_volume": not limit_up,
             },
             "preference_conditions": {
                 "right_edge_volume_expanded": not limit_up,
@@ -192,7 +200,11 @@ def test_report_has_limit_groups_filters_and_sortable_headers():
     assert 'data-table-filter="not-limit"' in page
     assert 'data-table-filter="right-volume"' in page
     assert 'data-table-filter="gap-setup"' in page
-    assert 'data-table-filter="gap-setup" aria-pressed="false">缺口趋势 2</button>' in page
+    assert (
+        'data-table-filter="gap-setup" data-gap-review-target="gap-review" '
+        'aria-controls="candidate-table gap-review" aria-pressed="false">'
+        '缺口趋势 2</button>'
+    ) in page
     assert 'data-table-filter="favorites"' in page
     assert 'data-right-volume="true"' in page
     assert 'data-gap-setup="true"' in page
@@ -247,9 +259,21 @@ def test_report_has_limit_groups_filters_and_sortable_headers():
     assert page.count('class="sort-button"') == 18
     assert "缺口平台" in page
     assert "缺口后量" in page
-    assert "缺口趋势复核（前 2 只）" in page
+    assert "缺口趋势详细复核（2 只）" in page
     assert '<details class="gap-review" id="gap-review">' in page
     assert "点击展开" in page
+    assert page.count('class="gap-index-item"') == 2
+    assert 'class="gap-index-item" href="#gap-stock-600001"' in page
+    assert 'class="gap-detail-link" href="#gap-stock-600001"' in page
+    assert 'href="#stock-600001" title="查看通用逐股复核">通用复核</a>' in page
+    assert "缺口趋势专属复核" in page
+    assert "缺口价格区间 <b>10.20 - 10.50</b>" in page
+    assert "活跃放量占比 <b>75%</b>" in page
+    assert "gapReview.open = true;" in page
+    filter_handler = page.split("filterButtons.forEach", 1)[1].split(
+        "previousPageButton.addEventListener", 1
+    )[0]
+    assert 'if (activeFilter === "gap-setup") showGapReview();' in filter_handler
     assert "grid-template-columns:repeat(2,minmax(0,1fr))" in page
     assert ".segmented button,.segmented button:nth-last-child(-n+2)" in page
     assert 'localeCompare(rightRaw, "zh-CN"' in page
@@ -274,17 +298,46 @@ def test_report_lists_all_rows_but_limits_expensive_details():
     page = render_html(outcome, candidates, detail_limit=1)
 
     assert page.count('data-original-rank="') == 2
-    assert page.count('<section class="candidate"') == 2
+    assert page.count('<section class="candidate') == 2
+    assert page.count('class="candidate gap-candidate"') == 1
     assert page.count('id="stock-600001"') == 1
     assert page.count('id="gap-stock-600001"') == 1
     assert 'id="stock-600002"' not in page
-    assert "缺口趋势复核（前 1 只）" in page
-    assert "逐股复核（前 1 只）" in page
-    assert page.index("逐股复核（前 1 只）") < page.index(
-        '<details class="gap-review" id="gap-review">'
+    assert "缺口趋势详细复核（1 只）" in page
+    assert "通用逐股复核（前 1 只）" in page
+    assert page.index('<details class="gap-review" id="gap-review">') < page.index(
+        "通用逐股复核（前 1 只）"
     )
     assert '<details class="gap-review" id="gap-review" open>' not in page
     assert 'target.closest("details")' in page
+
+
+def test_gap_index_lists_every_candidate_when_detail_cards_are_limited():
+    candidates = [
+        make_candidate("600001", "测试一", limit_up=False),
+        make_candidate("600002", "测试二", limit_up=False),
+    ]
+    now = datetime(2026, 9, 18, 16, 0, 0)
+    outcome = ScanOutcome(
+        status="ok",
+        started_at=now,
+        finished_at=now,
+        candidates=candidates,
+        templates=[],
+        issues=[],
+        source_summary={"candidate_pool": 2, "history_success": 2},
+    )
+
+    page = render_html(outcome, candidates, detail_limit=1)
+
+    assert "缺口趋势详细复核（展示 1/2 只）" in page
+    assert page.count('class="gap-index-item"') == 2
+    assert 'class="gap-index-item" href="#gap-stock-600001"' in page
+    assert (
+        'class="gap-index-item" href="https://q.stock.sohu.com/cn/600002/index.shtml" '
+        'target="_blank" rel="noopener noreferrer"'
+    ) in page
+    assert 'id="gap-stock-600002"' not in page
 
 
 def test_report_labels_ths_snapshot_as_independent_review_data():
